@@ -1,0 +1,54 @@
+/* ==========================================================================
+   App 嵌入层 —— 只在 App 壳内生效（由壳层以 <link> 引入 index.html 副本）
+   目标：剥掉「演示用外壳」，让产品自身的 UI 铺满原生窗口。
+   —— 原型控制条 / 模拟标题栏 / 模拟状态栏 / 手机机身：属于演示，不属于产品
+   —— 侧栏 / 内容区 / ios-nav / ios-tabbar / 主题控件：属于产品，全部保留
+   注意：本文件必须排在 platform.css 之后，且关键覆写带 !important，
+        因为 platform.css 的响应式断点会改 .mac-window / .iphone 的尺寸。
+   ========================================================================== */
+
+/* ——— 1. 演示控制条整体移除 ——————————————————————
+   高度 38px 且 position:fixed，即使不占布局也会盖住顶部内容，必须 display:none */
+.proto-bar { display: none !important; }
+
+/* ——— 2. 舞台变成 App 视口本身 ——————————————————————
+   原型里 .proto-stage 承担「舞台」职责：66px 上边距给控制条让位，
+   --stage-bg 比 --bg-0 更暗一档用于衬托窗口外框。装进 App 后这两件事都不成立，
+   必须连背景一起换成 --bg-0，否则窗口边缘会露出一圈更暗的「舞台底」 */
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg-0); }
+.proto-stage {
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 100vh !important;
+  height: 100vh !important;
+  background: var(--bg-0) !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+}
+
+/* ——— 3. macOS：窗口壳拆掉，内容铺满原生窗口 ——————————— */
+.mac-window {
+  width: 100% !important;
+  height: 100vh !important;
+  max-width: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  animation: none !important;   /* 抓图/首帧不应停在淡入中间帧 */
+}
+/* 模拟标题栏（红黄绿灯 + ⌘N 角标 + 居中标题）：
+   真实窗口已经有原生标题栏，留着会出现两条标题栏 */
+.mac-titlebar { display: none !important; }
+
+/* ——— 4. iOS：手机机身与假状态栏拆掉 ——————————————————— */
+.iphone {
+  width: 100% !important;
+  height: 100vh !important;
+  max-width: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+/* 9:41 状态条 / 刘海 / home indicator —— 真机模拟器上本来就有 */
+.ios-statusbar, .ios-notch, .ios-home { display: none !important; }

@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+._*
+
+# Build output — regenerate with ./build/build.sh
+dist/
+build/tmp/
+build/ios/
+build/mac/
+
+# Screenshots from design iterations and verification runs.
+# The 8 final screenshots are kept in docs/screenshots/ instead.
+shots/
+verify/
+prototype/shots/
+build/shots/
+
+# Local scratch
+*.log
+*.bak
+*.bak-*
+ShellBin.new
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Icon exploration scratch — comparison renders and zoom tests, not sources.
+# The actual icon sources are icon/*.svg, icon.iconset/, and tools/.
+icon/_check/
+icon/_mark/
