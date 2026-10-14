@@ -1,3 +1,12 @@
 {$SYNC_DOMAIN} {
-    reverse_proxy api:8787
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        -Server
+    }
+    reverse_proxy api:8787 {
+        # Caddy is the edge: overwrite (never append to) whatever the client
+        # sent, so the API only ever sees the real TCP peer address.
+        header_up X-Forwarded-For {remote_host}
+    }
 }

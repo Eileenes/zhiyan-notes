@@ -4,6 +4,7 @@ No model credentials or AI proxy traffic are accepted by this service.
 """
 
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -139,7 +140,53 @@ class Push(BaseModel):
     operations: list[Operation] = Field(max_length=100)
 
 
-def create_app(database_url=None, storage_dir=None, rate_limit=True):
+def parse_trusted_proxies(value):
+    """Comma-separated IPs / CIDRs whose X-Forwarded-For may be believed."""
+    networks = []
+    for item in (value or "").split(","):
+        item = item.strip()
+        if item:
+            networks.append(ipaddress.ip_network(item, strict=False))
+    return tuple(networks)
+
+
+def _ip(value):
+    try:
+        return ipaddress.ip_address(value.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def client_ip(peer, forwarded_for, trusted):
+    """Real client address for rate limiting.
+
+    X-Forwarded-For is only consulted when the TCP peer is a configured trusted
+    proxy. The header is then walked right-to-left, skipping further trusted
+    hops; the first untrusted address is the client. Anything to the left of it
+    is attacker-controlled and ignored, so a forged header cannot pick its own
+    rate-limit bucket.
+    """
+    peer_ip = _ip(peer or "")
+    if peer_ip is None:
+        return peer or "unknown"
+    if not trusted or not any(peer_ip in n for n in trusted) or not forwarded_for:
+        return str(peer_ip)
+    hops = [h for h in forwarded_for.split(",")][-20:]
+    current = peer_ip
+    for hop in reversed(hops):
+        ip = _ip(hop)
+        if ip is None:
+            # Malformed entry: stop at the last address we could verify.
+            return str(current)
+        current = ip
+        if not any(ip in n for n in trusted):
+            return str(ip)
+    return str(current)
+
+
+def create_app(
+    database_url=None, storage_dir=None, rate_limit=True, trusted_proxies=None
+):
     url = database_url or os.getenv("DATABASE_URL", "sqlite:///./server/data/sync.db")
     storage = Path(
         storage_dir or os.getenv("ATTACHMENTS_DIR", "./server/data/attachments")
@@ -162,6 +209,11 @@ def create_app(database_url=None, storage_dir=None, rate_limit=True):
     )  # SQLite local tests and a single process; PostgreSQL also locks user rows.
     limits = defaultdict(deque)
     limits_lock = threading.Lock()
+    trusted = parse_trusted_proxies(
+        os.getenv("TRUSTED_PROXIES", "")
+        if trusted_proxies is None
+        else trusted_proxies
+    )
     max_file = int(os.getenv("MAX_AUDIO_BYTES", str(100 * 1024 * 1024)))
     user_quota = int(os.getenv("USER_STORAGE_BYTES", str(1024 * 1024 * 1024)))
 
@@ -223,6 +275,13 @@ def create_app(database_url=None, storage_dir=None, rate_limit=True):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
+    def remote(request):
+        return client_ip(
+            request.client.host if request.client else "",
+            request.headers.get("x-forwarded-for", ""),
+            trusted,
+        )
+
     def identity(authorization):
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(401, "请先登录")
@@ -275,7 +334,7 @@ def create_app(database_url=None, storage_dir=None, rate_limit=True):
 
     @app.post("/v1/auth/register")
     def register(body: Credentials, request: Request):
-        limit(("register", request.client.host), 5, 3600)
+        limit(("register", remote(request)), 5, 3600)
         mode = os.getenv("REGISTRATION_MODE", "open")
         code = os.getenv("REGISTRATION_INVITE", "")
         if mode == "closed" or (
@@ -298,7 +357,7 @@ def create_app(database_url=None, storage_dir=None, rate_limit=True):
 
     @app.post("/v1/auth/login")
     def login(body: Credentials, request: Request):
-        limit(("login-ip", request.client.host), 30, 300)
+        limit(("login-ip", remote(request)), 30, 300)
         limit(("login-user", body.username.lower()), 10, 300)
         with engine.connect() as conn:
             row = (

@@ -6,12 +6,25 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      default:
+        # Fixed address so the API can trust X-Forwarded-For from Caddy only.
+        ipv4_address: 172.31.87.10
     depends_on:
       - api
+  api:
+    environment:
+      TRUSTED_PROXIES: 172.31.87.10
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.87.0/24
 volumes:
   caddy_data:
   caddy_config:
