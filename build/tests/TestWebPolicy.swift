@@ -20,6 +20,11 @@ expect(!WebPolicy.pageIsProtected("<html><head><script>x</script><meta http-equi
 expect(!WebPolicy.pageIsProtected("<head><meta name=\"x\" content=\"script-src 'self'\"></head>"), "non-CSP meta ignored")
 expect(WebPolicy.pageIsProtected("<head><META HTTP-EQUIV='content-security-policy' CONTENT=\"script-src 'self'\"></head>"), "case-insensitive attributes")
 
+// The policy actually shipped (build/apple-csp.txt, run from the repo root).
+if let shipped = try? String(contentsOfFile: "build/apple-csp.txt", encoding: .utf8) {
+    expect(WebPolicy.pageIsProtected(page(shipped.trimmingCharacters(in: .whitespacesAndNewlines))), "shipped build/apple-csp.txt accepted")
+} else { expect(false, "build/apple-csp.txt readable from cwd") }
+
 let root = URL(fileURLWithPath: "/tmp/App.app/Web", isDirectory: true)
 expect(WebPolicy.decide(root.appendingPathComponent("index.html"), webRoot: root) == .allow, "bundled page allowed")
 expect(WebPolicy.decide(URL(string: "file:///tmp/App.app/Web/../../etc/passwd"), webRoot: root) == .cancel, "file traversal cancelled")

@@ -68,7 +68,7 @@ preflight() {
 # ---------------------------------------------------------------------------
 write_app_index() {
   local dest="$1"
-  python3 - "$ROOT/prototype/index.html" "$dest" <<'PY'
+  python3 - "$ROOT/prototype/index.html" "$dest" "$ROOT/build/apple-csp.txt" <<'PY'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
@@ -84,10 +84,8 @@ else:
 # Apple shells load index.html from file://, so there is no response header to
 # carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
 # (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
-CSP = ("default-src 'self'; script-src 'self'; "
-       "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
-       "media-src 'self' data: blob:; connect-src 'none'; "
-       "object-src 'none'; base-uri 'none'; form-action 'none'")
+# Single source of truth: build/apple-csp.txt (also used by apple/scripts/stage-web.sh).
+CSP = open(sys.argv[3], encoding='utf-8').read().strip()
 meta = '<meta http-equiv="Content-Security-Policy" content="%s">\n' % CSP
 if 'Content-Security-Policy' not in s:
     head = s.index('<head>') + len('<head>\n')
