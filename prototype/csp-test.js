@@ -40,7 +40,7 @@ test("Apple shell index gets a CSP meta without inline scripts", () => {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "csp-")), "index.html");
   const sh = fs.readFileSync(path.join(root, "build/build.sh"), "utf8");
   const py = sh.match(/<<'PY'\n([\s\S]*?)\nPY/)[1];
-  execFileSync("python3", ["-", path.join(dir, "index.html"), out], { input: py });
+  execFileSync("python3", ["-", path.join(dir, "index.html"), out, path.join(root, "build/apple-csp.txt")], { input: py });
   const html = fs.readFileSync(out, "utf8");
   const m = html.match(/<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
   assert.ok(m, "CSP meta must be the first element in <head>");
@@ -57,4 +57,16 @@ test("handler regex catches every on* attribute", () => {
     assert.match(`<div ${a}="x()">`, re, a);
   assert.match('<img src=x onerror = "y">', re);
   assert.doesNotMatch('<div data-on="x" class="button">', re);
+});
+
+test("apple-csp.txt is the single CSP source for Apple shells", () => {
+  const csp = fs.readFileSync(path.join(root, "build/apple-csp.txt"), "utf8").trim();
+  assert.doesNotMatch(csp, /unsafe-eval|file:|\*/);
+  for (const f of ["build/build.sh", "apple/scripts/stage-web.sh"]) {
+    const p = path.join(root, f);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, "utf8");
+    assert.match(src, /apple-csp\.txt/, f + " must read build/apple-csp.txt");
+    assert.doesNotMatch(src, /script-src '/, f + " must not hard-code a CSP");
+  }
 });
