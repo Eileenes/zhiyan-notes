@@ -45,7 +45,8 @@ test("Apple shell index gets a CSP meta without inline scripts", () => {
   const m = html.match(/<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
   assert.ok(m, "CSP meta must be the first element in <head>");
   const script = m[1].split(";").map((d) => d.trim()).find((d) => d.startsWith("script-src"));
-  assert.doesNotMatch(script, /unsafe-inline|unsafe-eval|\*/);
+  assert.doesNotMatch(script, /unsafe-|\*|file:|https?:|data:|blob:/);
+  assert.doesNotMatch(m[1], /file:/, "no blanket file: sources");
   assert.match(m[1], /object-src 'none'/);
   assert.match(m[1], /base-uri 'none'/);
 });
