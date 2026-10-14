@@ -56,7 +56,18 @@ function toast(message, kind = "ok", undoID) {
   el.id = "zy-toast";
   el.className = kind;
   el.role = kind === "error" ? "alert" : "status";
-  el.innerHTML = `${kind === "bloom" ? flowerSVG(1) : ""}<span>${esc(message)}</span>${undoID ? `<button data-act="undo" data-id="${esc(undoID)}">撤销删除</button>` : ""}`;
+  // Error messages can echo provider/server responses: set them as text only.
+  if (kind === "bloom") el.innerHTML = flowerSVG(1);
+  const text = document.createElement("span");
+  text.textContent = String(message ?? "");
+  el.append(text);
+  if (undoID) {
+    const undo = document.createElement("button");
+    undo.dataset.act = "undo";
+    undo.dataset.id = undoID;
+    undo.textContent = "撤销删除";
+    el.append(undo);
+  }
   document.body.append(el);
   toastTimer = setTimeout(
     () => el.remove(),
@@ -74,6 +85,7 @@ function rootHTML() {
       providers: pageProviders,
       sync: pageSync,
       integrations: pageIntegrations,
+      privacy: pagePrivacy,
     }[state.page]?.() || pageCapture()
   );
 }
@@ -92,7 +104,7 @@ function render() {
   document.querySelectorAll('[data-act="nav"]').forEach((b) => {
     const selected =
       b.dataset.p === state.page ||
-      (["providers", "sync", "integrations"].includes(state.page) &&
+      (["providers", "sync", "integrations", "privacy"].includes(state.page) &&
         b.dataset.p === "settings") ||
       (state.page === "detail" && b.dataset.p === state.returnPage);
     b.classList.toggle("on", selected);
@@ -145,6 +157,7 @@ function readRoute() {
       "providers",
       "sync",
       "integrations",
+      "privacy",
     ].includes(page)
   )
     state.page = page;

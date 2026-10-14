@@ -124,6 +124,13 @@ enum Web {
 func pageTarget(platform: String, opts: Options) -> PageTarget? {
     guard let dir = Web.directory() else { return nil }
     let index = dir.appendingPathComponent("index.html")
+    // file:// has no response headers, so the CSP lives in a <meta> that
+    // build.sh / stage-web inject. Fail closed if a page was staged without it.
+    guard let html = try? String(contentsOf: index, encoding: .utf8),
+          WebPolicy.pageIsProtected(html) else {
+        FileHandle.standardError.write("index.html 缺少有效的 Content-Security-Policy（script-src 不得含 unsafe-inline / unsafe-eval / 通配或主机来源），拒绝加载\n".data(using: .utf8)!)
+        return nil
+    }
     guard var comps = URLComponents(url: index, resolvingAgainstBaseURL: false) else { return nil }
     var items: [URLQueryItem] = []
     if platform == "ios" { items.append(URLQueryItem(name: "plat", value: "ios")) }
@@ -192,6 +199,11 @@ func makeWebView(bridge: NativeBridge) -> WKWebView {
 /// 而这些脚本要录 2 秒音频 + 若干次异步往返，等不到就中途被杀，
 /// 表现为「脚本启动了但一条断言都没输出」—— 而且退出码 0，看起来像成功。
 let SELF_TEST_ACTIONS: Set<String> = ["selftest", "rectest", "probe", "garden-test", "draft-check", "export-check", "services-test", "gateway-test"]
+
+#if !DEBUG
+/// Release builds ship without Diagnostics.swift: no --act self-test scripts.
+func actionScript(_ name: String) -> String? { nil }
+#endif
 
 func runActionThenSnapshot(webView w: WKWebView, path: String?, act: String?) {
     // 没有 action 也没有截图路径 → 什么都不用做，正常启动路径
@@ -300,6 +312,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         webView.loadFileURL(target.url, allowingReadAccessTo: target.readAccess)
     }
 
+
+    /// Only the bundled UI loads in the web view: http(s)/mailto open in the
+    /// system browser, anything else (other files, javascript:, data:) is cancelled.
+    func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let root = Web.directory() else { return decisionHandler(.cancel) }
+        switch WebPolicy.decide(action.request.url, webRoot: root) {
+        case .allow: decisionHandler(.allow)
+        case .cancel:
+            log("[shell] blocked navigation \(action.request.url?.absoluteString ?? "nil")")
+            decisionHandler(.cancel)
+        case .openExternally(let url):
+            decisionHandler(.cancel)
+            guard action.navigationType == .linkActivated else { return }  // only user clicks
+            NSWorkspace.shared.open(url)
+        }
+    }
     func webView(_ w: WKWebView, didFinish nav: WKNavigation!) {
         didFinish = true
         log("[shell] didFinish bounds=\(w.bounds)")
@@ -367,6 +396,23 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelegat
         return true
     }
 
+
+    /// Only the bundled UI loads in the web view: http(s)/mailto open in the
+    /// system browser, anything else (other files, javascript:, data:) is cancelled.
+    func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let root = Web.directory() else { return decisionHandler(.cancel) }
+        switch WebPolicy.decide(action.request.url, webRoot: root) {
+        case .allow: decisionHandler(.allow)
+        case .cancel:
+            log("[shell] blocked navigation \(action.request.url?.absoluteString ?? "nil")")
+            decisionHandler(.cancel)
+        case .openExternally(let url):
+            decisionHandler(.cancel)
+            guard action.navigationType == .linkActivated else { return }  // only user clicks
+            UIApplication.shared.open(url)
+        }
+    }
     func webView(_ w: WKWebView, didFinish nav: WKNavigation!) {
         guard opts.snapshotPath != nil || opts.action != nil else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {

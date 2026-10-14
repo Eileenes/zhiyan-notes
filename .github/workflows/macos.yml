@@ -1,0 +1,93 @@
+name: macOS / iOS (Apple shells)
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apple:
+    # Deployment targets are macOS/iOS 26.0, so an Xcode 26 runner is required.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+          swiftc --version
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: 'aarch64-apple-ios-sim'}
+      - uses: Swatinem/rust-cache@v2
+        with: {workspaces: core}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14'}
+      - run: npm ci
+      - name: Web UI tests (real Chrome on the runner)
+        run: |
+          npm run test:runtime
+          node prototype/garden-test.js
+      - name: Rust core tests
+        run: cargo test --manifest-path core/Cargo.toml --locked
+      - name: Server tests (pytest, incl. real Rust client against a temp server)
+        run: |
+          python -m pip install -r server/requirements.txt -r server/requirements-dev.txt
+          python -m pytest server/tests -q
+      - name: Swift data-layer tests
+        run: bash build/build.sh test
+      - name: Build macOS app (ad-hoc signed, hardened runtime)
+        run: bash build/build.sh mac
+      - name: Install xcodegen 2.46.0 (pinned + checksum; when apple/project.yml exists, PR #6)
+        if: hashFiles('apple/project.yml') != ''
+        env:
+          XCODEGEN_VERSION: "2.46.0"
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" --version
+      - name: Build iOS Simulator app
+        run: bash build/build.sh ios
+      - name: Verify bundles
+        run: |
+          # iOS app name: dist/ZhiYan-sim.app (script build) or dist/ZhiYan.app
+          # (Xcode project build, PR #6). Accept either, require exactly one.
+          IOS=""
+          for c in dist/ZhiYan.app dist/ZhiYan-sim.app; do [ -d "$c" ] && IOS="$IOS $c"; done
+          set -- $IOS
+          [ $# -eq 1 ] || { echo "expected exactly one iOS app, found: '$IOS'"; exit 1; }
+          IOS="$1"
+          BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$IOS/Info.plist")
+          echo "iOS app: $IOS (executable $BIN)"
+          echo "IOS_APP=$IOS" >> "$GITHUB_ENV"
+          codesign --verify --strict "dist/只言.app"
+          codesign --verify --strict "$IOS"
+          vtool -show-build-version "$IOS/$BIN" | grep -q IOSSIMULATOR
+          test -f "dist/只言.app/Contents/Resources/Web/index.html"
+          test -f "$IOS/Web/index.html"
+      - name: iOS Simulator verification
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          python3 build/tests/verify-simulator.py "$UDID"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zhiyan-apple-unsigned
+          path: |
+            dist/只言.app
+            dist/ZhiYan-sim.app
+            dist/ZhiYan.app
+            verify/
+          if-no-files-found: ignore

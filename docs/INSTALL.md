@@ -81,11 +81,11 @@ Deleting the app does not delete your data; deleting that directory does.
 ```bash
 xcrun simctl list devices available          # pick a device
 xcrun simctl boot "iPhone 17 Pro"            # adjust to yours
-xcrun simctl install booted ZhiYan-sim.app
-xcrun simctl launch  booted com.duketao.zhiyan.sim
+xcrun simctl install booted ZhiYan.app
+xcrun simctl launch  booted com.duketao.zhiyan
 ```
 
-You can also double-click `ZhiYan-sim.app` and drag it into Simulator.
+You can also double-click `ZhiYan.app` and drag it into Simulator.
 
 **Limitations:** arm64 Apple Silicon simulators only, portrait only, and there is
 no physical-device build yet (see section 5).
@@ -151,14 +151,14 @@ first:
 ```bash
 UDID=39889A4C-0419-40B0-B2B1-464B0F4A41B2      # your own device's UDID
 
-xcrun simctl privacy "$UDID" grant microphone com.duketao.zhiyan.sim
-xcrun simctl launch "$UDID" com.duketao.zhiyan.sim --act rectest
+xcrun simctl privacy "$UDID" grant microphone com.duketao.zhiyan
+xcrun simctl launch "$UDID" com.duketao.zhiyan --act rectest
 ```
 
 ### Reading the iOS database directly
 
 ```bash
-DB="$(xcrun simctl get_app_container "$UDID" com.duketao.zhiyan.sim data)/Documents/只言/notes.db"
+DB="$(xcrun simctl get_app_container "$UDID" com.duketao.zhiyan data)/Documents/只言/notes.db"
 
 sqlite3 "file:$DB?mode=ro" "SELECT count(*) FROM notes;"
 sqlite3 "file:$DB?mode=ro" "SELECT text, source, process_state FROM notes;"
@@ -186,12 +186,11 @@ Then:
 ```bash
 # 1. Xcode → Settings → Accounts → sign in
 # 2. Add the device and let Xcode auto-generate a profile
-# 3. Change the build target in build/build.sh:
-#      xcrun -sdk iphoneos swiftc -target arm64-apple-ios26.0 ...
-#    and in Info.plist: drop UIRequiredDeviceCapabilities,
-#    and change CFBundleIdentifier (currently com.duketao.zhiyan.sim)
-# 4. Sign with a real certificate — DO NOT use --options runtime on a
-#    device build either; use a provisioning profile instead.
+# 3. Use the Xcode project instead of build.sh (see apple/README.md):
+#      apple/scripts/build-xcframework.sh && (cd apple && xcodegen generate)
+#      open apple/ZhiYan.xcodeproj   # scheme ZhiYan-iOS, pick your device
+# 4. Set your own DEVELOPMENT_TEAM locally (it is an empty placeholder in
+#    apple/project.yml on purpose) and let Xcode manage the profile.
 ```
 
 ---
@@ -268,8 +267,8 @@ off), then instrument.
 |---|---|
 | `只言.dmg` | macOS install image (691 KB, ad-hoc signed, hardened runtime) |
 | `只言.app` | Same content, no mounting needed |
-| `ZhiYan-sim.app` | iOS Simulator app bundle |
-| `ZhiYan-sim.zip` | Same content, compressed |
+| `ZhiYan.app` | iOS Simulator app bundle |
+| `ZhiYan-iOS-sim.zip` | Same content, compressed |
 | `dist/README-安装说明.md` | The same document as this one, left in `dist/` by the build |
 
 All build outputs are git-ignored. Rebuild with `./build/build.sh all`.

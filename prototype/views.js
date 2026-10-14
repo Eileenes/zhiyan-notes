@@ -132,7 +132,7 @@ function pageDetail(inline = false) {
     ${!editing && n.transcript ? `<div class="ai-output"><h3>语音转写</h3><p>${esc(n.transcript)}</p></div>` : ""}
     ${!editing && n.ai_tags?.length ? `<div class="mem-tags">${n.ai_tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
     ${!n.audio && n.attachment_id ? `<button class="btn" data-service="download-audio" data-id="${esc(n.id)}">${svg("download")} 下载录音到本机</button>` : ""}
-    ${n.audio ? `<div class="real-audio"><button class="icon-button audio-play" data-act="play" aria-label="播放录音">${svg("play")}</button><div><label for="audio-seek" class="sr-only">播放进度</label><input type="range" id="audio-seek" min="0" max="${Math.max(1, n.dur)}" step="0.1" value="0"><div class="audio-labels"><span id="audio-current">00:00</span><span>${mmss(n.dur)}</span></div></div></div>` : ""}
+    ${n.audio ? `<div class="real-audio"><button class="icon-button audio-play" data-act="play" aria-label="播放录音">${svg("play")}</button><div><label for="audio-seek" class="sr-only">播放进度</label><input type="range" id="audio-seek" min="0" max="${Math.max(1, Number(n.dur) || 0)}" step="0.1" value="0"><div class="audio-labels"><span id="audio-current">00:00</span><span>${mmss(n.dur)}</span></div></div></div>` : ""}
     <div class="detail-actions">${editing ? `<button class="btn btn-primary" data-act="save-edit" ${state.busy ? "disabled" : ""}>${state.busy ? "保存中…" : "保存修改"}</button><button class="btn" data-act="cancel-edit" ${state.busy ? "disabled" : ""}>取消</button>` : `<button class="btn" data-service="summary" data-id="${esc(n.id)}">${svg("sparkle")} AI 整理</button>${n.audio ? `<button class="btn" data-service="transcription" data-id="${esc(n.id)}">转写录音</button>` : ""}<button class="btn" data-act="edit">${svg("note")} 编辑</button><button class="btn" data-act="export" data-fmt="md" data-id="${esc(n.id)}">${svg("download")} 导出</button><button class="btn btn-ghost" data-act="delete" data-id="${esc(n.id)}">${svg("trash")} 删除</button>`}</div>
     <p class="detail-foot">${svg("shield")} 这段记忆，安心留在你的设备里。</p></article>`;
 }
@@ -149,6 +149,7 @@ function pageSettings() {
       )
       .join("")}</div></div>
     <div class="settings-group"><h2>我的数据</h2><div class="settings-list"><div class="setting-row">${svg("shield")}<div><b>保存在这台设备</b><p>${ZY.native ? "离线也能记录。开启同步或 AI 时，内容会发送到你配置的服务。" : "当前为浏览器预览，数据仅用于演示。"}</p></div><span class="status-pill">本机</span></div>
+      <button class="setting-row" data-act="nav" data-p="privacy">${svg("shield")}<div><b>隐私政策与授权</b><p>哪些内容会离开这台设备，以及如何撤回。</p></div>${svg("chevron")}</button>
       ${[
         ["md", "Markdown", "便于阅读的文字文件"],
         ["json", "JSON", "结构化记录，不包含音频文件"],

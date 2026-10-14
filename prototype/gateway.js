@@ -60,6 +60,13 @@ const ExternalAPI = {
   },
   async control(action) {
     if (this.busy || !ZY.native || state.platform === "ios") return;
+    if (action === "start") {
+      // Q&A sends questions and matching memories to the default text model.
+      const qa = Services.providers.find(
+        (p) => p.protocol !== "transcription" && Services.isDefault(p),
+      );
+      if (qa && !(await Consent.ensure(qa, "gateway"))) return;
+    }
     this.busy = true;
     this.message = "";
     render();

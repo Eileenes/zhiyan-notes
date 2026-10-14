@@ -67,11 +67,11 @@ open "/Applications/只言.app"
 ```bash
 xcrun simctl list devices available                    # 找一个已启动或可启动的机型
 xcrun simctl boot "iPhone 17 Pro"                     # 按你的机型改
-xcrun simctl install booted ZhiYan-sim.app
-xcrun simctl launch  booted com.duketao.zhiyan.sim
+xcrun simctl install booted ZhiYan.app
+xcrun simctl launch  booted com.duketao.zhiyan
 ```
 
-也可以直接双击 `ZhiYan-sim.app` 丢进模拟器。
+也可以直接双击 `ZhiYan.app` 丢进模拟器。
 
 只适配 arm64 Apple Silicon 模拟器，仅竖屏。
 
@@ -124,14 +124,14 @@ iOS 侧跑同一套（需串行，且先预授权麦克风）：
 
 ```bash
 UDID=$(xcrun simctl list devices booted -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["devices"][next(iter(json.load(sys.stdin)["devices"]))])[0]["udid"])' 2>/dev/null)
-xcrun simctl privacy "$UDID" grant microphone com.duketao.zhiyan.sim
-xcrun simctl launch "$UDID" com.duketao.zhiyan.sim --act rectest
+xcrun simctl privacy "$UDID" grant microphone com.duketao.zhiyan
+xcrun simctl launch "$UDID" com.duketao.zhiyan --act rectest
 ```
 
 iOS 侧的数据也直接查过库：
 
 ```bash
-sqlite3 "$(xcrun simctl get_app_container booted com.duketao.zhiyan.sim data)/Documents/只言/notes.db" \
+sqlite3 "$(xcrun simctl get_app_container booted com.duketao.zhiyan data)/Documents/只言/notes.db" \
   "SELECT count(*) FROM notes;"
 ```
 
@@ -205,8 +205,8 @@ Web 资源拷完逐个比对哈希、二进制进包后比对 LC_UUID、模拟�
 |---|---|
 | `只言.dmg` | macOS 安装包（691 KB，ad-hoc 签名 + hardened runtime） |
 | `只言.app` | 同上内容，免挂载直接运行 |
-| `ZhiYan-sim.app` | iOS 模拟器 App bundle |
-| `ZhiYan-sim.zip` | 同上内容的压缩包，方便传输 |
+| `ZhiYan.app` | iOS 模拟器 App bundle |
+| `ZhiYan-iOS-sim.zip` | 同上内容的压缩包，方便传输 |
 | `README-安装说明.md` | 本文件 |
 | `MemoryNotes-sim.app` | **旧包，已作废**，请勿使用 |
 

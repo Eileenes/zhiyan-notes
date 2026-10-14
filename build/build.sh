@@ -27,15 +27,18 @@ cd "$ROOT"
 
 APP_NAME="只言"
 MAC_BUNDLE_ID="com.duketao.zhiyan"
-IOS_BUNDLE_ID="com.duketao.zhiyan.sim"
-IOS_BIN="ZhiYan-sim"
+IOS_BUNDLE_ID="com.duketao.zhiyan"   # same as the Xcode project (apple/project.yml)
+# Diagnostics.swift (--act self-test scripts) is debug-only. The iOS simulator
+# build is a Debug build and always has it; the macOS build gets it only with
+# ZY_DIAGNOSTICS=1 (used by local/CI verification, never for distribution).
+ZY_DIAGNOSTICS="${ZY_DIAGNOSTICS:-0}"
 
 TMP="$ROOT/build/tmp"
 DIST="$ROOT/dist"
 ICON_ICNS="$ROOT/icon/MemoryNotes.icns"
 ICON_PNG="$ROOT/icon/icon-1024.png"
 
-WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js)
+WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js theme-init.js privacy.js)
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$*"; }
@@ -68,7 +71,7 @@ preflight() {
 # ---------------------------------------------------------------------------
 write_app_index() {
   local dest="$1"
-  python3 - "$ROOT/prototype/index.html" "$dest" <<'PY'
+  python3 - "$ROOT/prototype/index.html" "$dest" "$ROOT/build/apple-csp.txt" <<'PY'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
@@ -81,6 +84,17 @@ else:
         sys.stderr.write('ERROR: index.html 里找不到 platform.css 锚点\n')
         sys.exit(1)
     s = s.replace(anchor, anchor + tag)
+# preview.css 只给浏览器原型用（控制条 / 窗口外框 / 手机机身），App 不加载
+s = s.replace('<link rel="stylesheet" href="preview.css">\n', '')
+# Apple shells load index.html from file://, so there is no response header to
+# carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
+# (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
+# Single source of truth: build/apple-csp.txt (also used by apple/scripts/stage-web.sh).
+CSP = open(sys.argv[3], encoding='utf-8').read().strip()
+meta = '<meta http-equiv="Content-Security-Policy" content="%s">\n' % CSP
+if 'Content-Security-Policy' not in s:
+    head = s.index('<head>') + len('<head>\n')
+    s = s[:head] + meta + s[head:]
 open(dst, 'w', encoding='utf-8').write(s)
 PY
   [ $? -eq 0 ] || die "生成 App 版 index.html 失败"
@@ -98,23 +112,19 @@ PY
 #       出现「找不到 DataStore 类型」。
 # ---------------------------------------------------------------------------
 compile() {
-  local plat="$1" out="$2"
+  local out="$1"
   mkdir -p "$TMP"
   cp "$ROOT/build/shell.swift" "$TMP/main.swift"
   cp "$ROOT/build/Data.swift"  "$TMP/Data.swift"
 
-  if [ "$plat" = "ios" ]; then
-    say "编译 iOS 模拟器目标 (arm64)"
-    IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib --target aarch64-apple-ios-sim
-    xcrun -sdk iphonesimulator swiftc \
-      -target arm64-apple-ios26.0-simulator \
-      -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker "$ROOT/build/simulator.entitlements" \
-      -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/aarch64-apple-ios-sim/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
-  else
-    say "编译 macOS 目标"
-    cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib
-    swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
+  say "编译 macOS 目标"
+  cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib
+  local diag=()
+  if [ "$ZY_DIAGNOSTICS" = 1 ]; then
+    diag=(-D DEBUG "$ROOT/build/Diagnostics.swift")
+    say "包含 Diagnostics.swift（ZY_DIAGNOSTICS=1，仅用于验证，勿分发）"
   fi
+  swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/WebPolicy.swift" ${diag[@]+"${diag[@]}"} "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   [ -f "$out" ] || die "编译没有产出二进制：$out"
   ok "$(basename "$out") $(wc -c < "$out" | tr -d ' ') bytes"
 }
@@ -123,12 +133,21 @@ compile() {
 # Web 资源：拷完校验，不一致就炸
 # ---------------------------------------------------------------------------
 copy_web() {
-  local dest="$1"
+  local dest="$1" css_src="prototype"
   mkdir -p "$dest"
+  # CSS 走 build-web（PurgeCSS + 压缩，≤55KB 预算）；没有 node 依赖时退回源文件
+  if command -v node >/dev/null && [ -d node_modules/purgecss ]; then
+    node tools/build-web.js >/dev/null || die "build-web 失败（CSS 预算或压缩出错）"
+    css_src="web-dist"
+  else
+    say "未安装 node 依赖（npm ci），App 内 CSS 使用未压缩源文件"
+  fi
   for f in "${WEB_FILES[@]}"; do
-    cp "prototype/$f" "$dest/$f"
+    local src="prototype/$f"
+    [[ "$f" == *.css ]] && src="$css_src/$f"
+    cp "$src" "$dest/$f"
     local a b
-    a=$(shasum -a 256 "prototype/$f" | cut -d' ' -f1)
+    a=$(shasum -a 256 "$src" | cut -d' ' -f1)
     b=$(shasum -a 256 "$dest/$f"   | cut -d' ' -f1)
     [ "$a" = "$b" ] || die "Web 资源拷坏了：$f（$a != $b）"
   done
@@ -163,40 +182,6 @@ write_mac_plist() {
 PLIST
 }
 
-write_ios_plist() {
-  cat > "$1" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-	<key>CFBundleExecutable</key><string>ZhiYan-sim</string>
-	<key>CFBundleIdentifier</key><string>com.duketao.zhiyan.sim</string>
-	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-	<key>CFBundleName</key><string>ZhiYan-sim</string>
-	<key>CFBundleDisplayName</key><string>只言</string>
-	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>0.7</string>
-	<key>CFBundleVersion</key><string>7</string>
-	<key>CFBundleIcons</key>
-	<dict>
-		<key>CFBundlePrimaryIcon</key>
-		<dict>
-			<key>CFBundleIconFiles</key><array><string>icon-1024</string></array>
-			<key>UIPrerenderedIcon</key><false/>
-		</dict>
-	</dict>
-	<key>UILaunchScreen</key><dict/>
-	<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
-	<key>UISupportedInterfaceOrientations</key>
-	<array><string>UIInterfaceOrientationPortrait</string></array>
-	<key>UIUserInterfaceStyle</key><string>Automatic</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>只言在你按下麦克风时录制你的语音并存到本机。开启同步后会上传到你选择的同步服务；发起转写时发送到你配置的模型服务。</string>
-</dict>
-</plist>
-PLIST
-}
 
 # ---------------------------------------------------------------------------
 # macOS 包
@@ -205,7 +190,7 @@ build_mac() {
   local APP="$TMP/$APP_NAME.app"
   rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Web"
 
-  compile mac "$APP/Contents/MacOS/$APP_NAME"
+  compile "$APP/Contents/MacOS/$APP_NAME"
   write_mac_plist "$APP/Contents/Info.plist"
   printf 'APPL????' > "$APP/Contents/PkgInfo"
   cp "$ICON_ICNS" "$APP/Contents/Resources/MemoryNotes.icns"
@@ -232,27 +217,29 @@ build_mac() {
 # iOS 模拟器包
 # ---------------------------------------------------------------------------
 build_ios() {
-  local APP="$TMP/ZhiYan-sim.app"
-  rm -rf "$APP"; mkdir -p "$APP/Web"
-
-  compile ios "$APP/$IOS_BIN"
-  write_ios_plist "$APP/Info.plist"
-  cp "$ICON_PNG" "$APP/icon-1024.png"
-  write_app_index "$APP/Web/index.html"
-  copy_web "$APP/Web"
-
-  codesign --force --sign - "$APP" 2>/dev/null
-  codesign --verify --strict "$APP" || die "iOS 签名校验失败"
-  # 平台标记必须是 IOSSIMULATOR：编成真机 arm64 的包装不进模拟器，
-  # 而且这个错误在安装时才会报，编译期完全看不出来
-  vtool -show-build-version "$APP/$IOS_BIN" | grep -q IOSSIMULATOR \
+  # The iOS app is built from the Xcode project (apple/project.yml) so it uses
+  # the real entitlements, Info.plist, privacy manifest and bundle id. Debug
+  # configuration for the simulator: includes Diagnostics.swift for --act.
+  command -v xcodegen >/dev/null || die "找不到 xcodegen（brew install xcodegen）"
+  say "生成 Xcode 工程并构建 iOS 模拟器 (Debug)"
+  "$ROOT/apple/scripts/build-xcframework.sh"
+  (cd "$ROOT/apple" && xcodegen generate --quiet)
+  local derived="$TMP/ios-derived"
+  xcodebuild -project "$ROOT/apple/ZhiYan.xcodeproj" -scheme ZhiYan-iOS \
+    -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+    -derivedDataPath "$derived" CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO build -quiet \
+    || die "xcodebuild iOS 模拟器构建失败"
+  local APP="$derived/Build/Products/Debug-iphonesimulator/ZhiYan.app"
+  [ -d "$APP" ] || die "没有产出 $APP"
+  # 平台标记必须是 IOSSIMULATOR：编成真机 arm64 的包装不进模拟器
+  vtool -show-build-version "$APP/ZhiYan" | grep -q IOSSIMULATOR \
     || die "二进制不是模拟器目标（缺 IOSSIMULATOR 标记）"
-  ok "iOS 模拟器包签名通过 · 平台标记 IOSSIMULATOR 正确 · 未加 --options runtime"
+  ok "iOS 模拟器包 · 平台标记 IOSSIMULATOR · bundle id $IOS_BUNDLE_ID"
 
   mkdir -p "$DIST"
-  rm -rf "$DIST/ZhiYan-sim.app"
+  rm -rf "$DIST/ZhiYan.app"
   cp -R "$APP" "$DIST/"
-  ok "已放入 dist/ZhiYan-sim.app"
+  ok "已放入 dist/ZhiYan.app（iOS 模拟器）"
 }
 
 # ---------------------------------------------------------------------------
@@ -277,6 +264,10 @@ run_tests() {
   cp "$ROOT/build/shell.swift" "$TMP/main.swift"
   swiftc -O "$ROOT/build/Data.swift" "$ROOT/build/tests/TestData.swift" -o "$TMP/testdata" || die "测试编译失败"
   "$TMP/testdata"
+  say "跑 WebPolicy 测试（CSP 解析 + 导航策略）"
+  mkdir -p "$TMP/twp" && cp "$ROOT/build/tests/TestWebPolicy.swift" "$TMP/twp/main.swift"
+  swiftc -O "$ROOT/build/WebPolicy.swift" "$TMP/twp/main.swift" -o "$TMP/testwebpolicy" || die "WebPolicy 测试编译失败"
+  "$TMP/testwebpolicy"
 }
 
 # ---------------------------------------------------------------------------
