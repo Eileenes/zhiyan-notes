@@ -19,7 +19,8 @@ const chrome = spawn(
     `--user-data-dir=${profile}`,
     "about:blank",
   ],
-  { stdio: "ignore" },
+  // Own process group so cleanup can stop Chrome's helper processes too.
+  { stdio: "ignore", detached: true },
 );
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let ws;
@@ -546,11 +547,30 @@ let errors = [];
     console.error(e);
     process.exitCode = 1;
   })
-  .finally(() => {
+  .finally(async () => {
     ws?.close();
-    chrome.kill();
-    setTimeout(() => {
-      fs.rmSync(profile, { recursive: true, force: true });
-      process.exit(process.exitCode || 0);
-    }, 300);
+    // Wait for Chrome to actually exit before removing its profile; otherwise
+    // it may still be writing into Default/ (ENOTEMPTY on macOS runners).
+    const exited = new Promise((r) =>
+      chrome.exitCode !== null || chrome.signalCode !== null ? r() : chrome.once("exit", r),
+    );
+    const killGroup = (signal) => {
+      try {
+        process.kill(-chrome.pid, signal);
+      } catch {
+        chrome.kill(signal);
+      }
+    };
+    killGroup("SIGTERM");
+    await Promise.race([exited, sleep(5000)]);
+    killGroup("SIGKILL"); // stragglers (GPU/crashpad helpers) that outlive the main process
+    await Promise.race([exited, sleep(2000)]);
+    await sleep(300);
+    // Cleanup is best-effort and never changes the test result.
+    try {
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (error) {
+      console.error("WARN: could not remove temp Chrome profile:", error.message);
+    }
+    process.exit(process.exitCode || 0);
   });
