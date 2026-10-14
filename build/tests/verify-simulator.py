@@ -47,17 +47,24 @@ for action in ['selftest', 'garden-test', 'draft-check', 'export-check', 'servic
     else:
         args += ['--act', action]
     run(*args)
+    # Slow CI simulators (e.g. export-check presenting the share sheet) can take
+    # well over 20s; poll up to ~90s before giving up.
     result = ''
-    for _ in range(200):
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
         result = logfile.read_text()
         if 'RESULT=' in result or 'snapshot ok' in result or '[FATAL]' in result:
             break
-        time.sleep(.1)
+        time.sleep(.2)
+    ok = 'snapshot ok' in result if action == 'snapshot' else 'RESULT=PASS' in result
+    if not ok:
+        shutil.copyfile(logfile, output / logfile.name)
+        print(f'===== {action}: FAIL — full log ({logfile}) =====', flush=True)
+        print(result if result else '(log is empty)', flush=True)
+        print(f'===== end of {action} log =====', flush=True)
+        raise SystemExit(f'{action}: no {"snapshot ok" if action == "snapshot" else "RESULT=PASS"} within 90s')
     if action == 'snapshot':
-        assert 'snapshot ok' in result, result
         shutil.copyfile(isolated / 'home.png', output / 'ios-native.png')
-    else:
-        assert 'RESULT=PASS' in result, result
     shutil.copyfile(logfile, output / logfile.name)
     print(action + ': PASS', flush=True)
 print('Isolated simulator artifacts:', output)

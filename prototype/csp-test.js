@@ -39,8 +39,11 @@ test("Apple shell index gets a CSP meta without inline scripts", () => {
   const os = require("node:os");
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "csp-")), "index.html");
   const sh = fs.readFileSync(path.join(root, "build/build.sh"), "utf8");
-  const py = sh.match(/<<'PY'\n([\s\S]*?)\nPY/)[1];
-  execFileSync("python3", ["-", path.join(dir, "index.html"), out, path.join(root, "build/apple-csp.txt")], { input: py });
+  // \r?\n: tolerate CRLF checkouts (Windows) even though .gitattributes pins *.sh to LF.
+  const py = sh.match(/<<'PY'\r?\n([\s\S]*?)\r?\nPY/)[1];
+  // Windows runners ship python.exe but usually no python3.exe.
+  const python = process.platform === "win32" ? "python" : "python3";
+  execFileSync(python, ["-", path.join(dir, "index.html"), out, path.join(root, "build/apple-csp.txt")], { input: py });
   const html = fs.readFileSync(out, "utf8");
   const m = html.match(/<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
   assert.ok(m, "CSP meta must be the first element in <head>");

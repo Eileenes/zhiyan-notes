@@ -1,0 +1,3 @@
+# Shell scripts must keep LF endings on every platform (heredocs, shebangs,
+# and prototype/csp-test.js parses build/build.sh).
+*.sh text eol=lf

@@ -168,7 +168,7 @@ func makeWebView(bridge: NativeBridge) -> WKWebView {
         + "window.zyNative = { call: function(m) {"
         + "  m.seq = ++window.__zySeq;"
         + "  return new Promise(function(res, rej) {"
-        + "    var timer = setTimeout(function(){ delete window.__zyPending[m.seq]; rej(new Error('操作超时，请重试')); }, ['aiRun','providerTest','syncRun','audioDownload'].includes(m.op) ? 300000 : 30000); window.__zyPending[m.seq] = { res: res, rej: rej, timer: timer };"
+        + "    var timer = setTimeout(function(){ delete window.__zyPending[m.seq]; rej(new Error('操作超时，请重试')); }, ['aiRun','providerTest','syncRun','audioDownload'].includes(m.op) ? 300000 : m.op === 'export' ? 90000 : 30000); window.__zyPending[m.seq] = { res: res, rej: rej, timer: timer };"
         + "    window.webkit.messageHandlers.native.postMessage(m);"
         + "  });"
         + "} };"
