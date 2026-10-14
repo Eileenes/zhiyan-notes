@@ -17,6 +17,7 @@ services:
       DATABASE_URL: postgresql+psycopg://zhiyan:${POSTGRES_PASSWORD}@postgres/zhiyan
       REGISTRATION_MODE: ${REGISTRATION_MODE:-invite}
       REGISTRATION_INVITE: ${REGISTRATION_INVITE:?Set REGISTRATION_INVITE in .env}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
       - "127.0.0.1:8787:8787"
     volumes:

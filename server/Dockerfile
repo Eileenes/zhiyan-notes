@@ -7,4 +7,5 @@ RUN mkdir -p /data/attachments && chown -R app:app /data
 USER app
 ENV ATTACHMENTS_DIR=/data/attachments
 EXPOSE 8787
-CMD ["uvicorn","app:app","--host","0.0.0.0","--port","8787","--workers","1","--no-access-log"]
+# Proxy headers are handled by the app (TRUSTED_PROXIES), not uvicorn.
+CMD ["uvicorn","app:app","--host","0.0.0.0","--port","8787","--workers","1","--no-access-log","--no-proxy-headers"]
