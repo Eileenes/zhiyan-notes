@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      simulator:
-        description: 'Also install and verify the iOS Simulator app (slow)'
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -41,6 +36,10 @@ jobs:
           node prototype/garden-test.js
       - name: Rust core tests
         run: cargo test --manifest-path core/Cargo.toml --locked
+      - name: Server tests (pytest, incl. real Rust client against a temp server)
+        run: |
+          python -m pip install -r server/requirements.txt -r server/requirements-dev.txt
+          python -m pytest server/tests -q
       - name: Swift data-layer tests
         run: bash build/build.sh test
       - name: Build macOS app (ad-hoc signed, hardened runtime)
@@ -55,7 +54,6 @@ jobs:
           test -f "dist/只言.app/Contents/Resources/Web/index.html"
           test -f dist/ZhiYan-sim.app/Web/index.html
       - name: iOS Simulator verification
-        if: github.event_name == 'workflow_dispatch' && inputs.simulator
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$UDID"
