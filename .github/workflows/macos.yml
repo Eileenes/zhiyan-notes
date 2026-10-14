@@ -44,15 +44,28 @@ jobs:
         run: bash build/build.sh test
       - name: Build macOS app (ad-hoc signed, hardened runtime)
         run: bash build/build.sh mac
+      - name: Install xcodegen (when the Xcode project exists, PR #6)
+        if: hashFiles('apple/project.yml') != ''
+        run: brew install xcodegen
       - name: Build iOS Simulator app
         run: bash build/build.sh ios
       - name: Verify bundles
         run: |
+          # iOS app name: dist/ZhiYan-sim.app (script build) or dist/ZhiYan.app
+          # (Xcode project build, PR #6). Accept either, require exactly one.
+          IOS=""
+          for c in dist/ZhiYan.app dist/ZhiYan-sim.app; do [ -d "$c" ] && IOS="$IOS $c"; done
+          set -- $IOS
+          [ $# -eq 1 ] || { echo "expected exactly one iOS app, found: '$IOS'"; exit 1; }
+          IOS="$1"
+          BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$IOS/Info.plist")
+          echo "iOS app: $IOS (executable $BIN)"
+          echo "IOS_APP=$IOS" >> "$GITHUB_ENV"
           codesign --verify --strict "dist/只言.app"
-          codesign --verify --strict dist/ZhiYan-sim.app
-          vtool -show-build-version dist/ZhiYan-sim.app/ZhiYan-sim | grep -q IOSSIMULATOR
+          codesign --verify --strict "$IOS"
+          vtool -show-build-version "$IOS/$BIN" | grep -q IOSSIMULATOR
           test -f "dist/只言.app/Contents/Resources/Web/index.html"
-          test -f dist/ZhiYan-sim.app/Web/index.html
+          test -f "$IOS/Web/index.html"
       - name: iOS Simulator verification
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
@@ -66,5 +79,6 @@ jobs:
           path: |
             dist/只言.app
             dist/ZhiYan-sim.app
+            dist/ZhiYan.app
             verify/
           if-no-files-found: ignore
