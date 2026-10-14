@@ -1,0 +1,108 @@
+# XcodeGen spec for the native Apple apps (macOS + iOS).
+#   brew install xcodegen
+#   apple/scripts/build-xcframework.sh   # Rust core -> apple/build/ZhiYanCore.xcframework
+#   cd apple && xcodegen generate        # -> apple/ZhiYan.xcodeproj (not committed)
+# Source of truth stays in build/*.swift, core/ and prototype/; the generated
+# project only references them. build/build.sh ios builds the simulator app
+# from this project (Debug); build/build.sh mac still compiles directly.
+name: ZhiYan
+options:
+  bundleIdPrefix: com.duketao
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "26.0"
+    iOS: "26.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.7"
+    CURRENT_PROJECT_VERSION: "7"
+    SWIFT_VERSION: "5.0"
+    # Placeholder on purpose: the Team ID is per developer/organisation. Set it
+    # locally (Xcode Signing & Capabilities, or DEVELOPMENT_TEAM=... on the
+    # xcodebuild command line) -- see apple/README.md. Simulator builds do not need it.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    DEAD_CODE_STRIPPING: YES
+    OTHER_LDFLAGS: ["-lc++"]
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
+      # Self-test scripts (--act) are debug-only; not compiled into Release.
+      EXCLUDED_SOURCE_FILE_NAMES: Diagnostics.swift
+
+targetTemplates:
+  ZhiYanApp:
+    type: application
+    sources:
+      - path: Sources/main.swift          # symlink -> build/shell.swift (top-level code needs main.swift)
+      - path: ../build/Data.swift
+      - path: ../build/Audio.swift
+      - path: ../build/Services.swift
+      - path: ../build/NativeBridge.swift
+      - path: ../build/WebPolicy.swift      # CSP parsing + navigation policy used by shell.swift (#3)
+      - path: ../build/Diagnostics.swift   # Debug only (excluded in Release, see configs)
+      - path: Config/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    dependencies:
+      - framework: build/ZhiYanCore.xcframework
+        embed: false                       # static library inside the XCFramework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+    preBuildScripts:
+      - name: Build Rust core XCFramework (if missing)
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ ! -d "$SRCROOT/build/ZhiYanCore.xcframework" ] || [ "${ZY_REBUILD_CORE:-0}" = 1 ]; then
+            "$SRCROOT/scripts/build-xcframework.sh"
+          fi
+    postCompileScripts:
+      - name: Stage web UI
+        basedOnDependencyAnalysis: false
+        script: '"$SRCROOT/scripts/stage-web.sh"'
+
+targets:
+  ZhiYan-macOS:
+    templates: [ZhiYanApp]
+    platform: macOS
+    sources:
+      - path: ../icon/MemoryNotes.icns
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: 只言
+        PRODUCT_BUNDLE_IDENTIFIER: com.duketao.zhiyan
+        INFOPLIST_FILE: Config/Info-macOS.plist
+        CODE_SIGN_ENTITLEMENTS: Config/ZhiYan-macOS.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+  ZhiYan-iOS:
+    templates: [ZhiYanApp]
+    platform: iOS
+    sources:
+      - path: Assets.xcassets              # AppIcon (single 1024 image, symlinked from icon/)
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_NAME: ZhiYan
+        PRODUCT_BUNDLE_IDENTIFIER: com.duketao.zhiyan
+        INFOPLIST_FILE: Config/Info-iOS.plist
+        CODE_SIGN_ENTITLEMENTS: Config/ZhiYan-iOS.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+
+schemes:
+  ZhiYan-macOS:
+    build: {targets: {ZhiYan-macOS: all}}
+    run: {config: Debug}
+    archive: {config: Release}
+  ZhiYan-iOS:
+    build: {targets: {ZhiYan-iOS: all}}
+    run: {config: Debug}
+    archive: {config: Release}

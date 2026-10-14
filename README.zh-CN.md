@@ -102,7 +102,7 @@ cd zhiyan-notes
 | 目标 | 产物 |
 |---|---|
 | `build.sh mac` | `dist/只言.app`、`dist/只言.dmg` |
-| `build.sh ios` | `dist/ZhiYan-sim.app`（arm64 模拟器） |
+| `build.sh ios` | `dist/ZhiYan.app`（arm64 模拟器，由 apple/project.yml 的 Debug 配置构建；需要 xcodegen） |
 | `build.sh test` | 只跑数据层断言 |
 
 脚本对每一步都做校验，而不是相信它：Web 资源进包后逐个比对哈希、二进制进包后比对

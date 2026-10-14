@@ -70,3 +70,16 @@ test("apple-csp.txt is the single CSP source for Apple shells", () => {
     assert.doesNotMatch(src, /script-src '/, f + " must not hard-code a CSP");
   }
 });
+
+test("Xcode project compiles every Swift source build.sh compiles", () => {
+  const yml = path.join(root, "apple/project.yml");
+  if (!fs.existsSync(yml)) return;
+  const project = fs.readFileSync(yml, "utf8");
+  const sh = fs.readFileSync(path.join(root, "build/build.sh"), "utf8");
+  const sources = new Set([...sh.matchAll(/"\$ROOT\/build\/([A-Za-z]+\.swift)"/g)].map((m) => m[1]));
+  for (const f of sources) {
+    if (f.startsWith("Test") || f === "shell.swift" || f === "Data.swift") continue;
+    assert.match(project, new RegExp("\\.\\./build/" + f.replace(".", "\\.")), "project.yml missing " + f);
+  }
+  assert.match(project, /\.\.\/build\/Data\.swift/);
+});

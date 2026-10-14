@@ -1,0 +1,4 @@
+module ZhiYanCore {
+    header "zhiyan_core.h"
+    export *
+}
