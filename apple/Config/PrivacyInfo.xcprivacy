@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for 只言 (iOS and macOS).
+  - No tracking, no tracking domains, no analytics/ads SDKs.
+  - Collected data: the developer does not operate a collection server. Notes
+    and audio go only to services the user configures (self-hosted sync,
+    their own model provider), which is not "collection" by the developer.
+    Re-evaluate this section if an official hosted sync service is offered.
+  - Required-reason APIs used by the app and its statically linked Rust core:
+    * File timestamp / metadata: FileManager.attributesOfItem (build/Audio.swift),
+      std::fs::metadata in the core, SQLite (bundled) stat calls -> C617.1
+      (files inside the app container).
+    * System boot time: mach_absolute_time via Rust std::time::Instant /
+      tokio timers -> 35F9.1 (measuring elapsed time).
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key><false/>
+	<key>NSPrivacyTrackingDomains</key><array/>
+	<key>NSPrivacyCollectedDataTypes</key><array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key><array><string>C617.1</string></array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key><array><string>35F9.1</string></array>
+		</dict>
+	</array>
+</dict>
+</plist>
