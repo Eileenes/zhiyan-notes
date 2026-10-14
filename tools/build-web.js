@@ -12,7 +12,7 @@ const root = path.resolve(__dirname, ".."),
 const PREVIEW_ONLY = new Set(["preview.css"]);
 // Class names that are built at runtime and never appear literally.
 const SAFELIST = {
-  standard: [/^proto-stage-(mac|ios)$/, "still", "sb-collapsed", "ok", "error", "bloom"],
+  standard: [/^proto-stage-(mac|ios)$/, "still", "ok", "error", "bloom"],
   greedy: [/focus-visible/, /data-theme/],
 };
 const CSS_BUDGET = 55 * 1024;
