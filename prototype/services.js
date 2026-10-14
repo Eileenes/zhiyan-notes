@@ -186,6 +186,14 @@ const Services = {
     try {
       await this.refresh();
       for (const job of this.jobs.filter((j) => j.status === "pending")) {
+        // Consent is re-read for every job: one revoked after it was queued
+        // (or a provider whose address changed) is held, not sent. The core
+        // enforces the same rule in aiRun.
+        const provider = this.providers.find((p) => p.id === job.provider_id);
+        if (!provider || !Consent.has(provider)) {
+          this.providerMessage = "有任务等待你同意向模型服务发送内容，未发送。";
+          continue;
+        }
         try {
           const key = await this.call("secretGet", {
             key: "provider." + job.provider_id,
@@ -531,6 +539,13 @@ document.addEventListener("click", async (e) => {
     Services.enqueue(action, id);
   if (action === "retry-job") {
     try {
+      const job = Services.jobs.find((j) => j.id === id);
+      const provider = Services.providers.find((p) => p.id === job?.provider_id);
+      if (!provider) throw new Error("模型服务已移除或停用");
+      if (!(await Consent.ensure(provider, job.kind))) {
+        toast("已取消，内容没有发送。");
+        return;
+      }
       await Services.call("aiRetry", { id });
       Services.processQueue();
     } catch (error) {

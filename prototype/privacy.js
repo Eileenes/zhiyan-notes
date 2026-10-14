@@ -65,9 +65,9 @@ function consentHost(p) {
 }
 function showConsent(p, purpose) {
   const what = {
-    summary: "这条记忆的文字内容",
-    transcription: "这段录音的音频",
-    gateway: "外部应用的提问，以及从你的记忆中检索到的相关内容",
+    summary: "这条记忆的正文和录音转写文字",
+    transcription: "这段录音的音频（转写结果会保存为这条记忆的文字）",
+    gateway: "外部应用的提问，以及检索到的相关记忆的正文和录音转写文字",
   }[purpose] || "所选内容";
   document.getElementById("overlay").innerHTML =
     `<div class="recording-scrim"><section class="recording-panel consent-panel" role="dialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-body"><h2 id="consent-title">发送到第三方模型服务前，请确认</h2><div id="consent-body"><p>只言将把<b>${esc(what)}</b>发送到「${esc(p.name || "未命名服务")}」（${esc(consentHost(p))}）进行处理。</p><p>该服务由第三方运营，只言无法控制其如何保存或使用这些内容。请只在你信任这个服务商时继续。</p><p class="service-help">同意后，对这个服务商（同一地址）不再询问；可在「设置 · 隐私」中撤回。</p></div><div class="recording-actions"><button class="text-link" data-act="nav-privacy">阅读隐私政策</button><button class="btn" data-act="consent-no">取消</button><button class="btn btn-primary" data-act="consent-yes">同意并继续</button></div></section></div>`;
@@ -85,7 +85,7 @@ document.addEventListener("click", (e) => {
   }
   if (act === "consent-revoke")
     Consent.revokeAll().then(() => {
-      toast("已撤回所有模型服务的发送授权。");
+      toast("已撤回所有模型服务的发送授权。排队中的任务不会再发送，对外接口的问答也会立即停用。");
       render();
     });
 });
@@ -95,7 +95,7 @@ function pagePrivacy() {
   <article class="service-card privacy-text">
   <p class="service-help">生效日期：2026 年 10 月 · 适用于只言 0.7 及以后版本</p>
   <h2>1. 默认只保存在本机</h2><p>你写下的文字、录音、标签和整理结果默认只保存在当前设备的本地数据库中。只言开发者不运营收集这些内容的服务器，也不包含广告或第三方统计 SDK。</p>
-  <h2>2. 第三方模型服务（可选）</h2><p>只有当你在「模型服务」中添加了服务商，并主动点击「AI 整理」「转写录音」或开启带问答的对外接口时，相应内容才会直接从你的设备发送到你配置的服务商。首次发送到某个服务商前，只言会弹窗请求你的同意，并记录同意时间。这些服务商由第三方运营，其处理方式受其自身政策约束。API Key 仅保存在系统安全存储中，不会同步。</p>
+  <h2>2. 第三方模型服务（可选）</h2><p>只有当你在「模型服务」中添加了服务商，并主动点击「AI 整理」（发送记忆正文和录音转写文字）、「转写录音」（发送录音音频）或开启带问答的对外接口（发送提问及相关记忆的正文和转写文字）时，相应内容才会直接从你的设备发送到你配置的服务商。首次发送到某个服务商前，只言会弹窗请求你的同意，并记录同意时间。这些服务商由第三方运营，其处理方式受其自身政策约束。API Key 仅保存在系统安全存储中，不会同步。</p>
   <h2>3. 同步服务（可选）</h2><p>登录同步账号后，记忆的文字、标签和录音会上传到你填写的同步服务，供你的其他设备使用。传输使用 HTTPS，但这不是端到端加密：同步服务的运营者在技术上可以读取内容。API Key、设备上的文件路径和搜索索引不会上传。</p>
   <h2>4. 对外接口（可选）</h2><p>对外接口只监听本机 127.0.0.1，需要访问密钥，退出应用后停止。</p>
   <h2>5. 你的权利</h2><p>你可以随时导出（Markdown / JSON）、编辑或删除记忆；在「账号与同步」中退出或删除同步账号，删除账号会移除服务器上该账号的全部记忆、录音、会话和设备记录；运营者的备份可能在其备份保留期内仍保留副本。你也可以在下方撤回对模型服务的授权。</p>
