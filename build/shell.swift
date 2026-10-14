@@ -124,6 +124,14 @@ enum Web {
 func pageTarget(platform: String, opts: Options) -> PageTarget? {
     guard let dir = Web.directory() else { return nil }
     let index = dir.appendingPathComponent("index.html")
+    // file:// has no response headers, so the CSP lives in a <meta> that
+    // build.sh / stage-web inject. Fail closed if a page was staged without it.
+    guard let html = try? String(contentsOf: index, encoding: .utf8),
+          html.contains("http-equiv=\"Content-Security-Policy\""),
+          !html.contains("script-src 'unsafe-inline'") else {
+        FileHandle.standardError.write("index.html 缺少 Content-Security-Policy meta，拒绝加载\n".data(using: .utf8)!)
+        return nil
+    }
     guard var comps = URLComponents(url: index, resolvingAgainstBaseURL: false) else { return nil }
     var items: [URLQueryItem] = []
     if platform == "ios" { items.append(URLQueryItem(name: "plat", value: "ios")) }

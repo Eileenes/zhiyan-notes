@@ -425,3 +425,12 @@
   line-height: 1.7;
   margin: 0;
 }
+.danger-zone {
+  margin-top: 18px;
+  border-color: var(--danger-line-2);
+}
+.btn-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-line);
+}

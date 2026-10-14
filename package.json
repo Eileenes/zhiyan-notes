@@ -9,7 +9,7 @@
     "android:init": "tauri android init && node tools/android-config.js",
     "build:android": "npm run build:web && tauri android build --apk",
     "test:ui": "node prototype/garden-test.js",
-    "test:runtime": "node --test prototype/runtime-test.js"
+    "test:runtime": "node --test prototype/runtime-test.js prototype/csp-test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.0"
