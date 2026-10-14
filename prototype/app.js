@@ -56,7 +56,18 @@ function toast(message, kind = "ok", undoID) {
   el.id = "zy-toast";
   el.className = kind;
   el.role = kind === "error" ? "alert" : "status";
-  el.innerHTML = `${kind === "bloom" ? flowerSVG(1) : ""}<span>${esc(message)}</span>${undoID ? `<button data-act="undo" data-id="${esc(undoID)}">撤销删除</button>` : ""}`;
+  // Error messages can echo provider/server responses: set them as text only.
+  if (kind === "bloom") el.innerHTML = flowerSVG(1);
+  const text = document.createElement("span");
+  text.textContent = String(message ?? "");
+  el.append(text);
+  if (undoID) {
+    const undo = document.createElement("button");
+    undo.dataset.act = "undo";
+    undo.dataset.id = undoID;
+    undo.textContent = "撤销删除";
+    el.append(undo);
+  }
   document.body.append(el);
   toastTimer = setTimeout(
     () => el.remove(),
