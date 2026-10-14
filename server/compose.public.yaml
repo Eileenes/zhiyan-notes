@@ -14,17 +14,20 @@ services:
     networks:
       default:
         # Fixed address so the API can trust X-Forwarded-For from Caddy only.
-        ipv4_address: 172.31.87.10
+        # Change both values in .env if the subnet clashes with your host.
+        ipv4_address: ${CADDY_IP:-172.31.87.10}
     depends_on:
       - api
   api:
     environment:
-      TRUSTED_PROXIES: 172.31.87.10
+      # Deliberately overrides any TRUSTED_PROXIES in .env: with the bundled
+      # Caddy the only trusted hop is Caddy itself.
+      TRUSTED_PROXIES: ${CADDY_IP:-172.31.87.10}
 networks:
   default:
     ipam:
       config:
-        - subnet: 172.31.87.0/24
+        - subnet: ${PROXY_SUBNET:-172.31.87.0/24}
 volumes:
   caddy_data:
   caddy_config:

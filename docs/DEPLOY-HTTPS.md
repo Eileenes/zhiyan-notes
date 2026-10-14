@@ -27,7 +27,8 @@ python3 -c "import secrets;print('REGISTRATION_INVITE='+secrets.token_urlsafe(12
 | `REGISTRATION_MODE` | 内测用 `invite`；稳定后可 `closed` |
 | `REGISTRATION_INVITE` | 邀请码，只发给内测用户 |
 | `SYNC_DOMAIN` | 域名本身，不带 `https://` |
-| `TRUSTED_PROXIES` | 使用随附 Caddy 时**留空**（由 `compose.public.yaml` 固定为 Caddy 的地址）；见第 5 节 |
+| `TRUSTED_PROXIES` | 只在**不用**随附 Caddy 时生效；用 `compose.public.yaml` 时会被覆盖为 `CADDY_IP`；见第 5 节 |
+| `PROXY_SUBNET` / `CADDY_IP` | 随附 Caddy 的私有网段与 Caddy 地址，默认 `172.31.87.0/24` / `172.31.87.10`；冲突时修改，见第 5 节 |
 
 ## 3. 启动
 
@@ -78,7 +79,8 @@ docker compose -f compose.yaml -f compose.public.yaml up -d
 
 注册（每 IP 5 次/小时）和登录（每 IP 30 次/5 分钟）的限流按客户端 IP 计数。API 只在 **TCP 对端属于 `TRUSTED_PROXIES`** 时才读取 `X-Forwarded-For`，并从右往左取第一个不可信地址；否则一律使用 TCP 对端地址。因此直连 API 的人伪造 `X-Forwarded-For` 不能换桶绕过限流（见 `server/tests/test_proxy.py`）。
 
-- **随附 Caddy（推荐）**：`compose.public.yaml` 给 Caddy 固定地址 `172.31.87.10` 并设置 `TRUSTED_PROXIES=172.31.87.10`。Caddyfile 用 `header_up X-Forwarded-For {remote_host}` **覆盖**客户端传来的值，所以 API 拿到的就是真实对端 IP。若 `172.31.87.0/24` 与服务器已有网络冲突，同时修改 compose 文件中的子网、Caddy 地址和 `TRUSTED_PROXIES`。
+- **随附 Caddy（推荐）**：`compose.public.yaml` 建一个私有网络（`PROXY_SUBNET`，默认 `172.31.87.0/24`），给 Caddy 固定地址 `CADDY_IP`（默认 `172.31.87.10`），并把 API 的 `TRUSTED_PROXIES` **强制设为 `CADDY_IP`**——此时 `.env` 里的 `TRUSTED_PROXIES` 会被 compose 覆盖、不生效（这是有意的：只信 Caddy 一跳）。Caddyfile 用 `header_up X-Forwarded-For {remote_host}` **覆盖**客户端传来的值。
+  - **子网冲突**：若 `docker compose up` 报 `Pool overlaps with other one on this address space`，或该网段与服务器/VPN 路由重叠（`ip route` 查看），在 `.env` 中同时改 `PROXY_SUBNET` 与 `CADDY_IP`（例如 `10.213.87.0/24` 与 `10.213.87.10`），然后 `docker compose -f compose.yaml -f compose.public.yaml down && ... up -d`（不加 `-v`，数据卷保留）。`CADDY_IP` 必须在 `PROXY_SUBNET` 内且不是 `.1`（网关）。
 - **Caddy 前面还有 CDN / 负载均衡**：在 Caddyfile 全局选项里配置 `servers { trusted_proxies static <CDN 网段> }` 并改为 `header_up X-Forwarded-For {client_ip}`；只能填 CDN 官方公布的网段。
 - **自建 Nginx 等反代到 `127.0.0.1:8787`**：Docker 会把来源映射为网桥网关地址（通常 `172.17.0.1` 或 compose 网络的 `.1`）。把这个地址填到 `.env` 的 `TRUSTED_PROXIES`，并在 Nginx 中用 `proxy_set_header X-Forwarded-For $remote_addr;`（覆盖，不要用 `$proxy_add_x_forwarded_for`）。
 - uvicorn 已用 `--no-proxy-headers` 启动，代理头只由应用按上述规则处理。
