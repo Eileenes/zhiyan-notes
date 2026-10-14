@@ -35,7 +35,7 @@ DIST="$ROOT/dist"
 ICON_ICNS="$ROOT/icon/MemoryNotes.icns"
 ICON_PNG="$ROOT/icon/icon-1024.png"
 
-WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js)
+WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js theme-init.js privacy.js)
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$*"; }
@@ -83,6 +83,17 @@ else:
     s = s.replace(anchor, anchor + tag)
 # preview.css 只给浏览器原型用（控制条 / 窗口外框 / 手机机身），App 不加载
 s = s.replace('<link rel="stylesheet" href="preview.css">\n', '')
+# Apple shells load index.html from file://, so there is no response header to
+# carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
+# (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
+CSP = ("default-src 'self' file:; script-src 'self' file:; "
+       "style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; "
+       "media-src 'self' file: data: blob:; connect-src 'none'; "
+       "object-src 'none'; base-uri 'none'; form-action 'none'")
+meta = '<meta http-equiv="Content-Security-Policy" content="%s">\n' % CSP
+if 'Content-Security-Policy' not in s:
+    head = s.index('<head>') + len('<head>\n')
+    s = s[:head] + meta + s[head:]
 open(dst, 'w', encoding='utf-8').write(s)
 PY
   [ $? -eq 0 ] || die "生成 App 版 index.html 失败"

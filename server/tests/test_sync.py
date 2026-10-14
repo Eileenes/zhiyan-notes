@@ -149,3 +149,57 @@ def test_invite_registration(api, monkeypatch):
         ).status_code
         == 200
     )
+
+
+def delete_account(api, h, **body):
+    return api.request(
+        "DELETE",
+        "/v1/account",
+        headers=h,
+        json={"password": "test-password-123", "confirm": "alice", **body},
+    )
+
+
+def test_delete_account_removes_data_files_sessions(api, tmp_path):
+    from sqlalchemy import func, select
+    from server.app import attachments, changes, notes, receipts, sessions, users
+
+    a = account(api)
+    second_device = account(api, device="laptop")
+    b = account(api, "bob")
+    data = b"RIFFdelete me"
+    aid = hashlib.sha256(data).hexdigest()
+    assert api.put("/v1/attachments/" + aid, headers=a, content=data).status_code == 200
+    assert api.put("/v1/attachments/" + aid, headers=b, content=data).status_code == 200
+    assert push(api, a, [operation(attachment_id=aid)]).status_code == 200
+    assert push(api, b, [operation()]).status_code == 200
+    engine = api.app.state.engine
+    with engine.connect() as conn:
+        uid = conn.scalar(select(users.c.id).where(users.c.username == "alice"))
+    folder = tmp_path / "audio" / uid
+    assert (folder / aid).is_file()
+
+    assert api.request("DELETE", "/v1/account", json={"password": "x", "confirm": "alice"}).status_code == 401
+    assert delete_account(api, a, password="wrong-password-1").status_code == 403
+    assert delete_account(api, a, confirm="bob").status_code == 422
+    assert (folder / aid).is_file()
+
+    r = delete_account(api, a)
+    assert r.status_code == 200, r.text
+    assert not folder.exists()
+    with engine.connect() as conn:
+        for table in (notes, changes, receipts, attachments, sessions):
+            assert conn.scalar(select(func.count()).select_from(table).where(table.c.user_id == uid)) == 0
+        assert conn.scalar(select(func.count()).select_from(users).where(users.c.id == uid)) == 0
+    # Old tokens of every device are dead.
+    for h in (a, second_device):
+        assert api.get("/v1/sync/pull", headers=h).status_code == 401
+        assert api.get("/v1/devices", headers=h).status_code == 401
+        assert delete_account(api, h).status_code == 401
+    assert api.post("/v1/auth/login", json=dict(username="alice", password="test-password-123", device_id="phone")).status_code == 401
+    # Other accounts are untouched.
+    assert len(api.get("/v1/sync/pull", headers=b).json()["records"]) == 1
+    assert api.get("/v1/attachments/" + aid, headers=b).content == data
+    # Username can be registered again as a fresh, empty account.
+    fresh = account(api)
+    assert api.get("/v1/sync/pull", headers=fresh).json()["records"] == []

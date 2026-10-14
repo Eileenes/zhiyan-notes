@@ -7,7 +7,8 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), "zhiyan-ui-"));
 const output = path.resolve(__dirname, "../verify/garden");
 fs.mkdirSync(output, { recursive: true });
 const chrome = spawn(
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  process.env.CHROME_PATH ||
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   [
     "--headless=new",
     "--disable-gpu",
@@ -166,6 +167,26 @@ let errors = [];
   await click('[data-act="undo"]');
   await wait("ZY.list.some(n=>n.id===window.editedID)");
   await check("undo restores note", "ZY.list.some(n=>n.id===window.editedID)");
+  // XSS: user/model content must never become live markup.
+  const payload = '<img src=x onerror="window.__xss=(window.__xss||0)+1"><script>window.__xss=99</script>';
+  await evaluate(`window.__xss=0;window.alert=()=>{window.__xss+=100}`);
+  await click('[data-p="capture"]');
+  await input("#cap-input", payload);
+  await click('[data-act="save-text"]');
+  await wait("!state.busy && !state.draft");
+  await evaluate(
+    `(async()=>{const n=ZY.list.find(n=>n.raw.includes("onerror"));n.summary=${JSON.stringify(payload)};n.tags=[${JSON.stringify(payload)}];n.transcript=${JSON.stringify(payload)};n.ai_tags=[${JSON.stringify(payload)}];})()`,
+  );
+  await click('[data-p="timeline"]');
+  await click(".memory-card");
+  await evaluate(`toast(${JSON.stringify(payload)},"error")`);
+  await sleep(300);
+  await check(
+    "note containing <img onerror> does not execute",
+    `window.__xss===0 && !document.querySelector("#root img, #root script, #zy-toast img") && document.querySelector(".detail-raw").textContent.includes("onerror") && document.getElementById("zy-toast").textContent.includes("onerror")`,
+  );
+  await evaluate(`(async()=>{const n=ZY.list.find(n=>n.raw.includes("onerror"));await ZY.remove?.(n.id);})()`).catch(() => {});
+  await evaluate(`state.note=null;navigate("capture")`);
   await click('[data-p="search"]');
   await input("#q", "上海");
   await wait("!state.searching && state.hits.length===1");
@@ -401,6 +422,105 @@ let errors = [];
   await check(
     "recording duration is displayed in seconds",
     'ZY.list.find(n=>n.audio==="preview-retry.wav").dur===2',
+  );
+  // Account deletion: two confirmation steps, then local binding is cleared.
+  await evaluate(
+    `window.deleteCalls=[];Services.call=async(op,args)=>{deleteCalls.push([op,args]);if(op==="secretGet")return "tok";if(op==="accountDelete")return {account:null,enabled:false,pending:0,conflicts:0};if(op==="servicesGet")return {providers:[],sync:{account:null,enabled:false},jobs:[]};return null;};Services.sync={enabled:true,account:{username:"alice",url:"https://sync.example",user_id:"u1"},pending:0,conflicts:0};navigate("sync")`,
+  );
+  await click('[data-service="delete-account-start"]');
+  await input('[data-delete-field="confirm"]', "bob");
+  await input('[data-delete-field="password"]', "fixture-password-123");
+  await click('[data-service="delete-account-next"]');
+  await check(
+    "wrong username blocks account deletion",
+    'Services.deleteAccount.step===1 && !deleteCalls.some(c=>c[0]==="accountDelete")',
+  );
+  await input('[data-delete-field="confirm"]', "alice");
+  await click('[data-service="delete-account-next"]');
+  await check(
+    "account deletion asks a second time",
+    '!!document.querySelector(\'[data-service="delete-account-confirm"]\') && !deleteCalls.some(c=>c[0]==="accountDelete")',
+  );
+  await click('[data-service="delete-account-confirm"]');
+  await wait("!Services.working");
+  await check(
+    "account deletion clears local binding and token",
+    'deleteCalls.some(c=>c[0]==="accountDelete"&&c[1].confirm==="alice"&&c[1].token==="tok") && deleteCalls.some(c=>c[0]==="secretDelete"&&c[1].key==="sync.u1") && !Services.sync.enabled && Services.deleteAccount.password===""',
+  );
+  // Privacy: consent before the first send to a third-party model, persisted.
+  const consentSetup = `window.aiCalls=[];Services.providers=[{id:"p1",name:"测试服务商",protocol:"openai",baseUrl:"https://api.example.com/v1",model:"m",enabled:true}];Services.call=async(op,a)=>{if(op==="aiEnqueue")aiCalls.push(a);return [];};Services.processQueue=()=>{};`;
+  await evaluate(`localStorage.removeItem("zy-aiConsent");${consentSetup}navigate("timeline")`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check(
+    "consent dialog shown before first model request",
+    `aiCalls.length===0 && document.querySelector(".consent-panel").textContent.includes("api.example.com")`,
+  );
+  await click('[data-act="consent-no"]');
+  await evaluate("window.p1");
+  await check("declining consent sends nothing", `aiCalls.length===0 && !Consent.has(Services.providers[0])`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await click('[data-act="consent-yes"]');
+  await evaluate("window.p1");
+  await check("accepting consent sends the request", `aiCalls.length===1`);
+  await send("Page.reload");
+  await wait('typeof state!=="undefined" && state.loaded');
+  await evaluate(consentSetup + `window.p1=Services.enqueue("summary","n1");0`);
+  await evaluate("window.p1");
+  await check(
+    "consent persists across restart",
+    `aiCalls.length===1 && !document.querySelector(".consent-panel")`,
+  );
+  await evaluate(`Services.providers[0].baseUrl="https://other.example.net/v1";window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check("changed provider address asks again", `aiCalls.length===1`);
+  await click('[data-act="consent-no"]');
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1120,
+    height: 760,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate(`navigate("privacy")`);
+  await check(
+    "privacy policy page renders with revoke control",
+    `document.querySelector(".privacy-page h1") && document.querySelector('[data-act="consent-revoke"]') && !document.querySelector('[data-act="consent-revoke"]').disabled`,
+  );
+  await screenshot("privacy");
+  await click('[data-act="consent-revoke"]');
+  await wait(`!Consent.has({id:"p1",baseUrl:"https://api.example.com/v1"})`);
+  await check("consent can be revoked", `Object.keys(Consent.all()).length===0`);
+  // Consent on retry and for jobs queued before a revocation.
+  // Reload: the block above stubbed Services.processQueue.
+  await send("Page.reload");
+  await wait('typeof state!=="undefined" && state.loaded');
+  await evaluate(`window.ops=[];window.savedNative=ZY.native;window.savedCall=ZY.call;ZY.native=true;window.zyPreferences={};ZY.call=async(op,a)=>{ops.push(op);return true;};Services.ready=true;Services.processing=false;
+    Services.providers=[{id:"p1",name:"测试服务商",protocol:"openai",baseUrl:"https://api.example.com/v1",model:"m",enabled:true}];
+    Services.jobs=[{id:"j1",note_id:"n1",kind:"summary",provider_id:"p1",status:"failed",error:"x"}];
+    Services.call=async(op,a)=>{ops.push(op);if(op==="servicesGet")return {providers:Services.providers,sync:Services.sync,jobs:Services.jobs};if(op==="aiRetry"){Services.jobs[0].status="pending";return true;}if(op==="aiRun"){Services.jobs[0].status="done";return {};}return "k";};
+    ZY.load=async()=>{};navigate("providers");0`);
+  await click('[data-service="retry-job"]');
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check("retry asks for consent before anything is sent", `!ops.includes("aiRetry") && !ops.includes("aiRun")`);
+  await click('[data-act="consent-no"]');
+  await wait(`!document.querySelector(".consent-panel")`);
+  await check("declined retry sends nothing", `!ops.includes("aiRetry") && !ops.includes("aiRun") && Services.jobs[0].status==="failed"`);
+  await click('[data-service="retry-job"]');
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await click('[data-act="consent-yes"]');
+  await wait(`ops.includes("aiRun")`);
+  await check("accepted retry goes through aiRetry then aiRun", `ops.indexOf("aiRetry")<ops.indexOf("aiRun")`);
+  await evaluate(`ops.length=0;Services.jobs=[{id:"j2",note_id:"n1",kind:"summary",provider_id:"p1",status:"pending"}];Consent.revokeAll().then(()=>Services.processQueue());0`);
+  await wait(`!Services.processing && ops.includes("servicesGet")`);
+  await check("queued job is not sent after consent is revoked", `!ops.includes("aiRun") && Services.jobs[0].status==="pending"`);
+  await evaluate(`Consent.grant(Services.providers[0]).then(()=>{Services.providers[0].baseUrl="https://moved.example/v1";return Services.processQueue();});0`);
+  await wait(`!Services.processing`);
+  await check("queued job is not sent after the provider address changes", `!ops.includes("aiRun")`);
+  await evaluate(`ZY.native=savedNative;ZY.call=savedCall;Consent.revokeAll();0`);
+  await check(
+    "consent copy names note body and transcripts",
+    `(()=>{showConsent({id:"p",name:"n",baseUrl:"https://a.example"},"summary");const t=document.querySelector(".consent-panel").textContent;Consent.answer(false);return t.includes("正文")&&t.includes("转写文字");})()`,
   );
   await check("no browser JS errors", JSON.stringify(errors.length === 0));
   console.log(JSON.stringify({ checks, screenshots: output }, null, 2));

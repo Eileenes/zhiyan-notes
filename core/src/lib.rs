@@ -192,6 +192,17 @@ impl Core {
                 let revoked = sync::logout(&self.meta("sync_account")?, s(&m, "token")).is_ok();
                 Ok(json!({"revoked":revoked}))
             }
+            "accountDelete" => {
+                let account = self.meta("sync_account")?;
+                if account.is_null() {
+                    return Err("本机未绑定同步账号".into());
+                }
+                if s(&m, "confirm") != s(&account, "username") {
+                    return Err("请输入当前用户名以确认删除".into());
+                }
+                sync::delete_account(&account, s(&m, "token"), s(&m, "password"), s(&m, "confirm"))?;
+                self.unbind()
+            }
             "syncStatus" => self.sync_status(),
             "syncConflicts" => Ok(json!(self.conflicts()?)),
             "syncResolve" => self.resolve(&m),
@@ -250,7 +261,7 @@ impl Core {
                 .map(Value::Object)
                 .unwrap_or(json!({}))),
             "prefsSet" => {
-                if !["draft", "theme", "sidebar", "recordingDraft", "onboarded"]
+                if !["draft", "theme", "sidebar", "recordingDraft", "onboarded", "aiConsent"]
                     .contains(&s(&m, "key"))
                 {
                     return Err("无效的设置".into());

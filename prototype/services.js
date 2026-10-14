@@ -11,6 +11,7 @@ const Services = {
   providerMessage: "",
   syncMessage: "",
   accountForm: { url: "", username: "", password: "", invite_code: "" },
+  deleteAccount: { step: 0, confirm: "", password: "" },
   conflicts: [],
   call(op, value = {}) {
     return ZY.call(op, value);
@@ -163,6 +164,10 @@ const Services = {
       );
       return;
     }
+    if (!(await Consent.ensure(provider, kind))) {
+      toast("已取消，内容没有发送。");
+      return;
+    }
     try {
       this.jobs = await this.call("aiEnqueue", {
         id,
@@ -181,6 +186,14 @@ const Services = {
     try {
       await this.refresh();
       for (const job of this.jobs.filter((j) => j.status === "pending")) {
+        // Consent is re-read for every job: one revoked after it was queued
+        // (or a provider whose address changed) is held, not sent. The core
+        // enforces the same rule in aiRun.
+        const provider = this.providers.find((p) => p.id === job.provider_id);
+        if (!provider || !Consent.has(provider)) {
+          this.providerMessage = "有任务等待你同意向模型服务发送内容，未发送。";
+          continue;
+        }
         try {
           const key = await this.call("secretGet", {
             key: "provider." + job.provider_id,
@@ -306,6 +319,49 @@ const Services = {
       render();
     } catch (error) {
       toast(error.message, "error");
+    }
+  },
+  // Two explicit steps: credentials + typed username, then a final confirmation.
+  deleteAccountStep(action) {
+    const d = this.deleteAccount,
+      a = this.sync.account;
+    if (action === "delete-account-start") d.step = 1;
+    if (action === "delete-account-cancel")
+      Object.assign(d, { step: 0, confirm: "", password: "" });
+    if (action === "delete-account-next") {
+      if (!a || d.confirm.trim().toLowerCase() !== a.username)
+        return toast("用户名不一致", "error");
+      if (!d.password) return toast("请输入当前密码", "error");
+      d.step = 2;
+    }
+    render();
+  },
+  async deleteAccountConfirm() {
+    const d = this.deleteAccount;
+    if (this.working || d.step !== 2) return;
+    this.working = true;
+    render();
+    try {
+      const key = this.tokenKey();
+      const token = await this.call("secretGet", { key });
+      this.sync = await this.call("accountDelete", {
+        token,
+        password: d.password,
+        confirm: d.confirm.trim().toLowerCase(),
+      });
+      await this.call("secretDelete", { key });
+      Object.assign(d, { step: 0, confirm: "", password: "" });
+      this.conflicts = [];
+      this.accountForm.username = "";
+      this.syncMessage = "账号及云端数据已删除，本机记录仍保留。";
+      await this.refresh();
+    } catch (error) {
+      d.step = 1;
+      d.password = "";
+      this.syncMessage = "未删除：" + error.message;
+    } finally {
+      this.working = false;
+      render();
     }
   },
   async download(id) {
@@ -438,11 +494,16 @@ document.addEventListener(
   true,
 );
 window.addEventListener("resize", () => ProviderProtocol.close());
+// Service forms are driven by buttons; never let Enter submit/navigate.
+// (Replaces inline onsubmit handlers, which the CSP forbids.)
+document.addEventListener("submit", (e) => e.preventDefault());
 document.addEventListener("input", (e) => {
   const target = e.target;
   if (target.dataset.providerField && Services.providerDraft)
     Services.providerDraft[target.dataset.providerField] = target.value;
   if (target.id === "provider-key") Services.providerKey = target.value;
+  if (target.dataset.deleteField)
+    Services.deleteAccount[target.dataset.deleteField] = target.value;
   if (target.dataset.accountField)
     Services.accountForm[target.dataset.accountField] = target.value;
 });
@@ -471,10 +532,20 @@ document.addEventListener("click", async (e) => {
     Services.authenticate(action === "register");
   if (action === "sync") Services.runSync();
   if (action === "logout") Services.logout();
+  if (action.startsWith("delete-account-") && action !== "delete-account-confirm")
+    Services.deleteAccountStep(action);
+  if (action === "delete-account-confirm") Services.deleteAccountConfirm();
   if (action === "summary" || action === "transcription")
     Services.enqueue(action, id);
   if (action === "retry-job") {
     try {
+      const job = Services.jobs.find((j) => j.id === id);
+      const provider = Services.providers.find((p) => p.id === job?.provider_id);
+      if (!provider) throw new Error("模型服务已移除或停用");
+      if (!(await Consent.ensure(provider, job.kind))) {
+        toast("已取消，内容没有发送。");
+        return;
+      }
       await Services.call("aiRetry", { id });
       Services.processQueue();
     } catch (error) {

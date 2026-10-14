@@ -232,6 +232,26 @@ impl Core {
         self.db.execute("INSERT INTO ai_jobs(id,note_id,kind,provider_id,note_rev,status,error,created_at) VALUES(?,?,?,?,?,'pending','',?) ON CONFLICT(note_id,kind,note_rev,provider_id) DO UPDATE SET status=CASE WHEN ai_jobs.status='running' THEN 'running' ELSE 'pending' END,error=''",params![id,s(m,"id"),kind,s(m,"provider_id"),num(&note,"rev"),now()])?;
         Ok(json!(self.jobs()?))
     }
+    /// The consent key the UI writes (`privacy.js` Consent.key): provider id
+    /// plus the origin of its base URL, so a changed address needs new consent.
+    pub fn consent_key(p: &Value) -> String {
+        let origin = reqwest::Url::parse(s(p, "baseUrl").trim())
+            .map(|u| u.origin().ascii_serialization())
+            .unwrap_or_default();
+        format!("{}|{}", s(p, "id"), origin)
+    }
+    /// Whether the user currently consents to sending content to `p`. Read
+    /// fresh from preferences on every call so a revocation takes effect for
+    /// queued jobs and for gateway requests that are already running.
+    pub fn consented(&self, p: &Value) -> Result<bool> {
+        let prefs = self.meta("preferences")?;
+        let map: Value = match &prefs["aiConsent"] {
+            Value::String(raw) => serde_json::from_str(raw).unwrap_or(Value::Null),
+            v => v.clone(),
+        };
+        let v = &map[Self::consent_key(p)];
+        Ok(!v.is_null() && v != false)
+    }
     pub fn process_job(&mut self, m: &Value) -> Result<Value> {
         let id = s(m, "id");
         let job=self.db.query_row("SELECT note_id,kind,provider_id,note_rev FROM ai_jobs WHERE id=? AND status='pending'",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?))).optional()?.ok_or("任务已在处理或已完成")?;
@@ -254,6 +274,11 @@ impl Core {
                 .flatten()
                 .find(|p| s(p, "id") == job.2 && p["enabled"] != false)
                 .ok_or("模型服务已移除或停用")?;
+            // Enforced here, not only in the UI: covers retries and jobs that
+            // were queued before consent was revoked.
+            if !self.consented(p)? {
+                return Err("尚未同意向该模型服务发送内容，任务未发送".into());
+            }
             let key = s(m, "key");
             if key.is_empty() {
                 return Err("请在设置中填写此服务的 API Key".into());

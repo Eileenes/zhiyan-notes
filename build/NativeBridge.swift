@@ -174,7 +174,7 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
         reply(seq, true, "ok")
       case "prefsSet":
         guard let key = m["key"] as? String,
-          ["draft", "theme", "onboarded", "sidebar", "recordingDraft"].contains(key),
+          ["draft", "theme", "onboarded", "sidebar", "recordingDraft", "aiConsent"].contains(key),
           let value = m["value"] as? String
         else { throw StoreError.failed("无效的设置") }
         var next = preferences
