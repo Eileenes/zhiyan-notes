@@ -1,57 +1,42 @@
 # 只言 ZhiYan
 
-**一款为中文场景做的语音 + 文字记忆 App，跑在 macOS 和 iOS 上。**
-说出来或打下来一次，之后一直搜得到，数据始终留在你自己设备里。
+**一款面向中文场景的语音 + 文字记忆 App。**
+记录先保存在设备；可选接入自己的模型服务和跨设备同步。
 
 [English](README.md) · **简体中文**
 
-`macOS` `iOS 模拟器` `Swift + WKWebView` `SQLite3 / FTS5` `零第三方依赖`
+`macOS` `iOS` `Windows / Android 适配中` `Rust + Swift + Tauri` `SQLite / PostgreSQL`
 
 ---
 
 ## 进展
 
-v0.5。数据链路是**真的**：记下来的东西会落盘、重开还在、能用中文搜回来。
+v0.7 在记忆花园界面上恢复了真实模型配置，并加入共享 Rust 核心、多用户同步服务与 Windows / Android 应用壳。
 
-### 已经能用的
+- **模型服务**：自定义地址、模型和密钥，支持 OpenAI Chat Completions、Responses 与 Anthropic Messages；独立语音转写配置、真实连接测试、默认服务、任务重试。
+- **多端同步**：注册 / 登录、离线队列、增量同步、录音上传及按需下载、多端修改冲突处理。服务器按账号隔离，部署使用 PostgreSQL。
+- **本地体验**：保留花园界面、中文短词搜索、草稿、编辑、真实播放、删除撤销、分页和导出。
+- **对外接口**：设置中可开启本机 MCP 和 OpenAI 兼容接口，支持记忆检索、读取、可选新增及模型问答；独立访问密钥和权限开关。接入示例见 **[对外接口说明](docs/EXTERNAL-API.md)**。
 
-| 功能 | 怎么验的 |
+详细结构、构建步骤、测试及限制见 **[跨平台实现说明](docs/CROSS-PLATFORM-PLAN.md)**；部署见 **[同步服务说明](server/README.md)**。
+
+| 平台 / 服务 | 当前交付状态 |
 |---|---|
-| 文字记录写进 SQLite | 退出重开，数据还在 |
-| 中文全文检索，**1 个字、2 个字**也能搜 | `selftest`，11 项断言 |
-| 真录音存成本地 `.m4a` | `rectest`，6 项断言；AAC 单声道 44.1 kHz、2.0 秒、含真实环境音 |
-| 导出 Markdown 与 JSON 文件 | 两种都实际生成并检查过 |
-| 标签和摘要可检索 | `selftest` 断言了「只靠标签命中」 |
-| 首次打开是空库，不是演示数据 | 用干净安装实测确认 |
+| macOS / iOS 模拟器 | 已构建并验证原生数据、播放、模型配置和 Keychain |
+| Windows | Tauri 壳及构建流水线已加入；未在 Windows 构建和运行 |
+| Android | 壳、权限、录音桥、安全存储及构建脚本已加入；按用户决定暂不安装 SDK，未生成 APK |
+| 同步服务 | SQLite / PostgreSQL 本地测试通过，未部署到公网 |
+| 模型调用 | 本地 HTTP 协议集成测试通过；未使用商业服务商真实凭据测试 |
 
-自动化覆盖：**43/43** 数据层断言、**11/11** 检索断言、**6/6** 录音断言。
-
-### 没做的
-
-直说，因为一份藏掉缺口的清单对谁都没用。
-
-| 功能 | 状态 | 原因 |
-|---|---|---|
-| 语音转写 | **没做** | 依赖云端服务商和已备案的生成式 AI。录音原样存下，标记为「待转写」 |
-| AI 摘要 / 自动打标 | **没做** | 同一个卡点 |
-| iCloud 双端同步 | **没做** | 界面画了，背后没有逻辑 |
-| iOS 真机包 | **没做** | 需要 provisioning profile，需要 iPhone 连到构建机 |
-| 横屏 | **没做** | 只有竖屏 |
-| App Store 上架 | **没做** | ad-hoc 签名，未公证 |
-
-这一版验证的是**记录 → 检索 → 导出**这条主干，以及中文短查询检索的可行性。
-AI 链路和同步都还没接。
+公开使用仍需部署 HTTPS 同步服务、完成平台安装验证和发行签名。iOS 真机及商店发行尚未配置。每个本机资料库当前只能绑定一个同步账号，尚无资料库切换界面。
 
 ---
 
 ## 界面
 
-| macOS | iOS 模拟器 |
+| macOS 浏览器预览 | iOS 模拟器 · 原生应用 |
 |---|---|
-| ![macOS 采集](docs/screenshots/mac-capture.png) | ![iOS 采集](docs/screenshots/ios-capture.png) |
-| ![macOS 时间线](docs/screenshots/mac-timeline.png) | ![iOS 时间线](docs/screenshots/ios-timeline.png) |
-| ![macOS 搜索](docs/screenshots/mac-search.png) | ![iOS 搜索](docs/screenshots/ios-search.png) |
-| ![macOS 设置](docs/screenshots/mac-settings.png) | |
+| ![Mac 记忆花园](docs/screenshots/garden-mac-home.png) | ![iOS 记忆花园](docs/screenshots/garden-ios-native.png) |
 
 ---
 
@@ -61,18 +46,13 @@ AI 链路和同步都还没接。
 
 这个界面在做成这一版之前经历了三轮审美返工。改成 SwiftUI 意味着把这些工作逐像素重做一遍，
 而且拖得越久越贵。`prototype/` 里的 HTML/CSS 原样保留，渲染结果完全一致；
-数据层也隔离在一个小接口后面——将来要搬去 SwiftUI，重写 `build/Data.swift` 一个文件就行，
-不是重写整个 App。
+数据层也隔离在一个小接口后面——将来要搬去 SwiftUI，数据与业务服务可以复用，但界面与界面状态仍需重新实现。
 
 代价是真实的：多背一个 WebView 运行时，拿不到平台的原生控件。这一版我认为这笔交易划算。
 
-### 数据层直接调 SQLite3，不用 ORM
+### 共享数据与服务核心
 
-`build/Data.swift` 直接调系统 SQLite3 的 C API。没有 GRDB，没有 Core Data，
-没有 SwiftData，没有 SPM 依赖，没有 CocoaPods。整条工具链就是 `swiftc` + 平台 SDK。
-
-用 GRDB 会写得更快，本身也是好选择。不用的原因是：零依赖的构建链始终可审计、足够小，
-而且这个选择只隔着一个缝，反悔成本固定。
+`core/` 用 Rust 和 SQLite / FTS5 实现检索、模型协议、处理队列及同步。Apple 通过 C ABI 调用，Windows / Android 通过 Tauri 调用。保留旧 Swift 数据代码作为迁移兼容和原生诊断使用，不再把业务逻辑分别复制到四端。
 
 ### 中文检索需要两张 FTS5 表 —— 而最直觉的解法是静默失效的
 
@@ -102,51 +82,20 @@ SQLite 的 `unicode61` 分词器会把一整串汉字当成**一个 token**。`�
 
 ## 架构
 
-```
-prototype/            HTML + CSS + JS —— 整个界面
-  app.js              视图、状态、交互
-  base.css            设计变量与版式
-  db.js               ZY 模块：调原生壳，无壳时退回内置假数据
-  data.js             演示数据，仅在浏览器里预览时使用
-        │
-        │  window.zyNative.call({ op, ...payload })  →  Promise
-        ▼
-build/shell.swift     WKWebView 宿主
-                      WKScriptMessageHandler  （通道名 "native"）
-                      AVAudioRecorder          （真录音，存 .m4a）
-                      AVAudioSession           （iOS 麦克风权限）
-        │
-        │  op: load · save · delete · search · stats
-        │      export · rebuild · wipe · seed
-        │      recStart · recStop · recCancel · micPerm · log · dump
-        ▼
-build/Data.swift      SQLite3 C API
-                      notes · notes_fts_trigram · notes_fts_unigram
-                      三种写操作的触发器，由 SQLite 自己保持一致
-        ▼
-notes.db
-```
-
-```
-notes.db
-├── notes                    全部记录，含软删除（deleted = 1）
-├── notes_fts_trigram        3 字以上中英文，原生 FTS5
-├── notes_fts_unigram        逐字插空格 —— 短查询走这张
-└── trg_notes_ai / _au / _ad 每次写入自动触发
-```
+界面由 Apple 和 Tauri 壳共用，两种壳调用同一个 Rust 核心；核心处理 SQLite 检索、模型任务及同步，服务端使用 FastAPI / PostgreSQL。详见 [架构与协议说明](docs/CROSS-PLATFORM-PLAN.md)。
 
 ---
 
 ## 从源码构建
 
 需要 Apple Silicon 的 Mac 和 Xcode 命令行工具（在 Xcode 26.2 上开发验证）。
-没有包管理步骤——因为没有任何依赖要装。
+另需 Rust 工具链和 `aarch64-apple-ios-sim` target；构建脚本通过 Cargo 编译共享核心。Windows / Android 的依赖及步骤见跨平台说明。
 
 ```bash
 git clone https://github.com/Eileenes/zhiyan-notes.git
 cd zhiyan-notes
 
-./build/build.sh test     # 编译并跑数据层 —— 期望 43/43
+./build/build.sh test     # 编译并跑数据层 —— 期望 61/61
 ./build/build.sh all      # 双端编译、签名、打 DMG
 ```
 
@@ -178,11 +127,11 @@ codesign --force --sign - ...                    # iOS 模拟器：不能加 run
 
 ## 自己验，而不是靠假设
 
-App 内置三套自检，在页面里调**真实**原生桥接，不走 mock。
+App 内置多套自检，在页面里调**真实**原生桥接，不走 mock。
 
 ```bash
-./dist/只言.app/Contents/MacOS/只言 --act selftest   # → RESULT=PASS（11/11）
-./dist/只言.app/Contents/MacOS/只言 --act rectest    # → RESULT=PASS（6/6）
+./dist/只言.app/Contents/MacOS/只言 --database /tmp/zhiyan-verification.db --act selftest   # → RESULT=PASS（11/11）
+./dist/只言.app/Contents/MacOS/只言 --database /tmp/zhiyan-verification.db --act rectest    # → RESULT=PASS（6/6）
 ./dist/只言.app/Contents/MacOS/只言 --act probe      # 页面几何诊断
 ```
 
@@ -202,7 +151,7 @@ App 内置三套自检，在页面里调**真实**原生桥接，不走 mock。
 
 ## 数据与隐私
 
-**数据完全不出设备。** 没有网络代码、没有账号、没有服务器、没有埋点、没有崩溃上报。
+**默认本地保存，可选开启联网能力。** 开启同步后，文字和录音发送到所配置的同步服务；发起 AI 任务时，相关文字或录音发送到所配置的模型服务商。API Key 保存在各设备安全存储中，不上传到同步服务。此版不提供端到端加密。
 
 | 平台 | 位置 |
 |---|---|
@@ -210,7 +159,7 @@ App 内置三套自检，在页面里调**真实**原生桥接，不走 mock。
 | macOS 媒体 | `~/Library/Application Support/只言/media/`（录音、导出文件） |
 | iOS | App 容器 → `Documents/只言/notes.db` |
 
-设置页底部会实时显示这个路径。删 App 不会删数据，删那个目录才会。
+卸载移动端应用可能删除本机数据，请先确认同步或导出完成。Windows / Android 数据保存在 Tauri 提供的应用私有数据目录中。
 
 ---
 
@@ -218,13 +167,16 @@ App 内置三套自检，在页面里调**真实**原生桥接，不走 mock。
 
 | 路径 | 是什么 |
 |---|---|
-| `build/Data.swift` | 建表、FTS5、查询、导出——整个数据层 |
+| `core/` | 共享数据、检索、模型协议与同步 |
+| `server/` | 多用户同步服务、部署和测试 |
+| `src-tauri/` / `plugins/credentials/` | Windows / Android 壳与安全存储 |
+| `build/Data.swift` | Apple 兼容数据访问与诊断 |
 | `build/shell.swift` | WKWebView 宿主、JS 桥接、录音 |
 | `build/build.sh` | 编译、打包、签名、校验 |
-| `build/tests/` | 43 项数据层断言 |
+| `build/tests/` | 61 项数据层断言 |
 | `prototype/` | 界面源码。目录名叫 prototype 是历史遗留，它就是现在在用的界面 |
 | `icon/` | 图标源文件与导出 |
-| `docs/screenshots/` | 上面用到的 8 张截图 |
+| `docs/screenshots/` | 本轮花园截图与 v0.5 历史截图 |
 | `PRODUCT-PLAN.md` | 产品方案 v3.3（中文） |
 
 `prototype/` 虽然叫这个名字，但它是壳实际打包进去的界面源文件。
@@ -232,18 +184,9 @@ App 内置三套自检，在页面里调**真实**原生桥接，不走 mock。
 
 ---
 
-## 后面要做的
+## 后续验证
 
-决定这个项目有没有未来的三件事，目前一件都没做。
-
-1. **语音转写与 AI 摘要。** 这才是真正的差异化。现在一段录音只是一个标着「待转写」的音频文件。
-2. **手机与 Mac 的同步。** 双端产品的地基。CloudKit 和自建服务器互斥，
-   CloudKit 还会把产品绑死在 Apple 平台上。**这个决定现在是有意留空的。**
-3. **「不依赖厂商」这个卖点。** 它只有在 iCloud 不可用的地方才成立。
-   所以它是第 2 条的结论，不是独立功能。
-
-这三件落地之前，v0.5 是一个能用的记录-检索闭环，不是一个有差异化的产品。
-这一点我们选择直说。
+下一步是填写真实服务商配置、部署 HTTPS 同步服务，并在 Windows 与 Android 环境完成安装、录音权限、重启及升级测试。公开运营需要补充账号找回、自助账号删除、资料库切换与数据生命周期管理。
 
 ---
 

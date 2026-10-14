@@ -25,6 +25,17 @@ ShellBin.new
 __pycache__/
 *.pyc
 
+# Cross-platform builds, local backend data and credentials
+node_modules/
+core/target/
+src-tauri/target/
+src-tauri/gen/
+web-dist/
+server/.venv/
+server/data/
+server/.env
+.pytest_cache/
+
 # Icon exploration scratch — comparison renders and zoom tests, not sources.
 # The actual icon sources are icon/*.svg, icon.iconset/, and tools/.
 icon/_check/

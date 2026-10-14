@@ -35,7 +35,7 @@ DIST="$ROOT/dist"
 ICON_ICNS="$ROOT/icon/MemoryNotes.icns"
 ICON_PNG="$ROOT/icon/icon-1024.png"
 
-WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js app.js)
+WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js)
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$*"; }
@@ -105,12 +105,15 @@ compile() {
 
   if [ "$plat" = "ios" ]; then
     say "编译 iOS 模拟器目标 (arm64)"
+    IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib --target aarch64-apple-ios-sim
     xcrun -sdk iphonesimulator swiftc \
       -target arm64-apple-ios26.0-simulator \
-      -O "$TMP/Data.swift" "$TMP/main.swift" -o "$out"
+      -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker "$ROOT/build/simulator.entitlements" \
+      -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/aarch64-apple-ios-sim/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   else
     say "编译 macOS 目标"
-    swiftc -O "$TMP/Data.swift" "$TMP/main.swift" -o "$out"
+    cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib
+    swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   fi
   [ -f "$out" ] || die "编译没有产出二进制：$out"
   ok "$(basename "$out") $(wc -c < "$out" | tr -d ' ') bytes"
@@ -145,8 +148,8 @@ write_mac_plist() {
 	<key>CFBundleName</key><string>只言</string>
 	<key>CFBundleDisplayName</key><string>只言</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleShortVersionString</key><string>0.7</string>
+	<key>CFBundleVersion</key><string>7</string>
 	<key>CFBundleIconFile</key><string>MemoryNotes</string>
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>NSHighResolutionCapable</key><true/>
@@ -154,7 +157,7 @@ write_mac_plist() {
 	<key>NSSupportsSuddenTermination</key><false/>
 	<key>NSSupportsAutomaticTermination</key><false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>只言在你按下麦克风时录制你的语音并存到本机。录音不会上传，转写由你自己配置的模型服务完成。</string>
+	<string>只言在你按下麦克风时录制你的语音并存到本机。开启同步后会上传到你选择的同步服务；发起转写时发送到你配置的模型服务。</string>
 </dict>
 </plist>
 PLIST
@@ -173,8 +176,8 @@ write_ios_plist() {
 	<key>CFBundleName</key><string>ZhiYan-sim</string>
 	<key>CFBundleDisplayName</key><string>只言</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleShortVersionString</key><string>0.7</string>
+	<key>CFBundleVersion</key><string>7</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
@@ -189,7 +192,7 @@ write_ios_plist() {
 	<array><string>UIInterfaceOrientationPortrait</string></array>
 	<key>UIUserInterfaceStyle</key><string>Automatic</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>只言在你按下麦克风时录制你的语音并存到本机。录音不会上传，转写由你自己配置的模型服务完成。</string>
+	<string>只言在你按下麦克风时录制你的语音并存到本机。开启同步后会上传到你选择的同步服务；发起转写时发送到你配置的模型服务。</string>
 </dict>
 </plist>
 PLIST
@@ -272,8 +275,7 @@ run_tests() {
   say "跑数据层测试"
   mkdir -p "$TMP"
   cp "$ROOT/build/shell.swift" "$TMP/main.swift"
-  swiftc -O "$ROOT/build/Data.swift" "$ROOT/build/tests/TestData.swift" -o "$TMP/testdata" 2>&1 \
-    | grep -E "error" && die "测试编译失败" || true
+  swiftc -O "$ROOT/build/Data.swift" "$ROOT/build/tests/TestData.swift" -o "$TMP/testdata" || die "测试编译失败"
   "$TMP/testdata"
 }
 

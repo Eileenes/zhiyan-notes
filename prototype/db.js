@@ -1,220 +1,193 @@
-/* ==========================================================================
-   只言 · 原生数据桥接
-   --------------------------------------------------------------------------
-   这个文件是「界面原型」和「真 App」之间唯一的接缝。
-
-   在浏览器里直接打开时（无壳），ZY.native = false，退回 data.js 的写死数据，
-   所以原型仍然能在浏览器里单独调版式 —— 这条路不能被破坏。
-
-   在 App 里（WKWebView 注入了 window.zyNative）时，ZY.native = true，
-   所有增删查走 SQLite：中文检索是 FTS5 双表真检索，不是字符串匹配。
-
-   ⚠️ 为什么不用 async/await 顶层写法：WKWebView 的用户脚本注入时机是
-      documentStart，跑在页面其它脚本之前，此时 Promise 微任务队列的行为
-      在部分系统版本上不稳。全程用 then 链，不依赖顶层 await。
-   ========================================================================== */
-
+// Native persistence and browser preview implement the same small interface.
 const ZY = (() => {
-
-  const native = typeof window.zyNative !== 'undefined' && typeof window.zyNative.call === 'function';
-
-  // 有壳 → 真数据；无壳 → 原型假数据
-  let seed = [];
-  if (!native) {
-    try { seed = JSON.parse(localStorage.getItem('zy-seed') || 'null') || MEMORIES.slice(); }
-    catch (e) { seed = MEMORIES.slice(); }
-  }
-
-  /* —— 数据集合 ————————————————————————————————
-     data.js 里 MEMORIES 是 const 数组，app.js 有 6 处直接引用它。
-     这里**就地**替换内容而不是重新赋值：改动最小，且不会漏掉任何一处引用。 */
+  const native = typeof window.zyNative?.call === "function";
   const list = [];
-
+  let totals = { total: 0, with_audio: 0, pending: 0 };
+  let preview;
+  try {
+    preview =
+      JSON.parse(localStorage.getItem("zy-preview-notes")) ||
+      MEMORIES.map((m) => ({ ...m }));
+  } catch {
+    preview = MEMORIES.map((m) => ({ ...m }));
+  }
+  const normalize = (m) => ({
+    ...m,
+    raw: m.raw || "",
+    summary: m.summary || null,
+    tags: m.tags || [],
+    entities: m.entities || {},
+    dur: Number(m.dur) || 0,
+    audio: m.audio || null,
+  });
   function setAll(items) {
-    list.length = 0;
-    items.forEach(m => list.push(normalize(m)));
+    list.splice(0, list.length, ...items.map(normalize));
   }
-
-  /* 原生侧字段名与原型渲染层期望的名字对不上（raw/summary/tags/dur/day/time），
-     在这里统一一次，渲染层不必知道数据库长什么样。 */
-  function normalize(m) {
-    return {
-      id: m.id,
-      day: m.day,
-      time: m.time,
-      source: m.source || 'text',
-      dur: typeof m.dur === 'number' ? m.dur : 0,
-      state: m.state || 'ready',
-      raw: m.raw || '',
-      summary: m.summary === null || m.summary === undefined ? null : m.summary,
-      tags: Array.isArray(m.tags) ? m.tags : [],
-      entities: (m.entities && typeof m.entities === 'object') ? m.entities : {},
-      audio: m.audio || null,
-    };
-  }
-
-  /* —— 调用 ——————————————————————————————————— */
   function call(op, payload = {}) {
-    if (!native) return Promise.reject(new Error('no-native'));
-    return window.zyNative.call(Object.assign({ op }, payload));
+    if (!native) return Promise.reject(new Error("请在只言 App 中使用此功能"));
+    return window.zyNative.call({ op, ...payload });
   }
-
-  /* —— 生命周期 ———————————————————————————————— */
-
-  function load() {
-    if (!native) { setAll(seed); return Promise.resolve({ native: false }); }
-    return call('load').then(r => {
-      setAll(r.notes || []);
-      return { native: true, stats: r.stats };
+  function persist() {
+    localStorage.setItem("zy-preview-notes", JSON.stringify(preview));
+  }
+  async function load() {
+    await (window.runtimeReady || Promise.resolve());
+    if (native) {
+      const r = await call("page");
+      setAll(r.notes);
+      totals = r.stats;
+    } else {
+      setAll(preview.filter((m) => !m.deleted));
+      totals = { total: list.length, pending: 0, with_audio: 0 };
+    }
+    return { native, stats: totals };
+  }
+  async function more() {
+    if (!native || !list.length) return;
+    const last = list[list.length - 1];
+    const r = await call("page", {
+      before: last.created_at,
+      beforeID: last.id,
     });
+    const ids = new Set(list.map((n) => n.id));
+    list.push(...r.notes.filter((n) => !ids.has(n.id)).map(normalize));
+    totals = r.stats;
   }
-
-  function save(text, extra = {}) {
-    if (!native) {
-      const m = normalize({
-        id: 'x' + Date.now(),
-        day: todayKey(), time: '刚刚',
-        source: 'text', state: 'done',
-        raw: text, tags: [], entities: {},
+  async function save(text, extra = {}) {
+    let result;
+    if (native)
+      result = await call("save", {
+        text,
+        source: "text",
+        state: "done",
+        ...extra,
       });
-      list.unshift(m);
-      return Promise.resolve({ id: m.id });
+    else {
+      const now = new Date();
+      const n = normalize({
+        id: extra.id || crypto.randomUUID(),
+        raw: text,
+        day: todayKey(),
+        time: now.toLocaleTimeString("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        created_at: Date.now(),
+        source: "text",
+        state: "done",
+        ...extra,
+        dur: Number(extra.dur || 0) / 1000,
+      });
+      preview.unshift(n);
+      persist();
+      result = { id: n.id };
     }
-    return call('save', Object.assign({ text, source: 'text', state: 'done' }, extra))
-      .then(r => load().then(() => r));
+    await load();
+    if (typeof Services !== "undefined") Services.scheduleSync();
+    return result;
   }
-
-  function remove(id) {
-    if (!native) return Promise.resolve();
-    return call('delete', { id }).then(() => load());
+  async function get(id) {
+    return native
+      ? normalize(await call("get", { id }))
+      : list.find((n) => n.id === id);
   }
-
-  function search(q) {
-    if (!native) {
-      const t = q.trim();
-      if (!t) return Promise.resolve({ hits: [], count: 0 });
-      const hits = list.filter(m =>
-        (m.raw && m.raw.includes(t)) || (m.summary && m.summary.includes(t)) ||
-        m.tags.some(x => x.includes(t)) ||
-        Object.values(m.entities).flat().some(e => e.includes(t))
-      );
-      return Promise.resolve({ hits, count: hits.length });
+  async function update(id, text, tags) {
+    if (native) await call("update", { id, text, tags });
+    else {
+      const n = preview.find((n) => n.id === id);
+      if (!n) throw new Error("这条记忆已不存在");
+      Object.assign(n, { raw: text, tags, summary: null });
+      persist();
     }
-    return call('search', { q });
+    await load();
+    if (typeof Services !== "undefined") Services.scheduleSync();
   }
-
-  function stats() {
-    if (!native) return Promise.resolve({ total: list.length });
-    return call('stats');
+  async function remove(id) {
+    if (native) await call("delete", { id });
+    else {
+      preview.find((n) => n.id === id).deleted = true;
+      persist();
+    }
+    await load();
+    if (typeof Services !== "undefined") Services.scheduleSync();
   }
-
-  function exportAs(format) {
-    if (!native) return Promise.reject(new Error('导出需要在 App 里使用'));
-    return call('export', { format });
+  async function restore(id) {
+    if (native) await call("restore", { id });
+    else {
+      preview.find((n) => n.id === id).deleted = false;
+      persist();
+    }
+    await load();
+    if (typeof Services !== "undefined") Services.scheduleSync();
   }
-
-  /* —— 录音 —— 真录，不做转写 ——————————————————
-     转写依赖云端服务商与生成式 AI 备案（PRODUCT-PLAN 第七章），
-     这一版没接。所以录音是真的、转写没有，记录落库为「待转写」。 */
+  async function search(q, source = "") {
+    if (native) {
+      const r = await call("search", { q, source });
+      return { ...r, hits: r.hits.map(normalize) };
+    }
+    const terms = q.trim().toLowerCase().split(/\s+/);
+    const hits = list.filter((m) =>
+      terms.every((t) =>
+        [m.raw, m.summary || "", ...m.tags].some((f) =>
+          f.toLowerCase().includes(t),
+        ),
+      ),
+    );
+    return { hits, count: hits.length };
+  }
   const rec = {
-    async start() {
-      if (!native) return { fake: true };
-      const r = await call('recStart');
-      return r;
-    },
-    async stop() {
-      if (!native) return { fake: true };
-      return call('recStop');
-    },
-    async cancel() {
-      if (!native) return { fake: true };
-      return call('recCancel');
-    },
+    start: () => call("recStart"),
+    stop: () => call("recStop"),
+    cancel: () => call("recCancel"),
+    status: () => call("recStatus"),
   };
-
-  /* —— 示例数据 ————————————————————————————————
-     真实用户第一次打开是空库（空状态本身就是产品设计，方案 3.4）。
-     这几个入口只给评审/演示用，设置页里能点到。 */
-  const SAMPLES = [
-    { id: 's1', raw: '今天早上在楼下买包子，老板随口说租金明年要翻一倍，他大概撑不过这个冬天。回来的路上一直在想这件事——小生意最先被租金吃掉。', source: 'voice', tags: ['念头', '早餐店'], dur: 18 },
-    { id: 's2', raw: '跟李彦在望京 SOHO 楼下那家云南米线聊了二十分钟，他说下个月要从现在的组调过去做增长，还没跟家里说。', source: 'voice', tags: ['李彦', '职业变动'], dur: 32 },
-    { id: 's3', raw: '周三 15:00 产品评审，材料周一晚上发群里。', source: 'text', tags: [], dur: 0 },
-    { id: 's4', raw: '楼下新开的那家咖啡，用的是云南的豆子，老板说一周换一次，烘焙日期写在黑板上。喝了杯手冲，酸得挺明显，但是有劲。', source: 'voice', tags: ['咖啡', '云南豆'], dur: 26 },
-    { id: 's5', raw: '雨大，地铁站里全是伞。', source: 'text', tags: [], dur: 0 },
-    { id: 's6', raw: '烘焙豆子这事真不能省。同一支豆子，烘得深一点浅一点，喝起来完全是两个东西。今天试了三种曲线，终于有一版自己愿意天天喝的。', source: 'voice', tags: ['咖啡', '烘焙'], dur: 47 },
-    { id: 's7', raw: '周会定了：下季度先做 iOS，安卓放到 Q4。理由是安卓的设计稿到现在还是去年那版。', source: 'text', tags: ['会议', '排期'], dur: 0 },
-  ];
-
-  function seedSamples() {
-    if (!native) return Promise.resolve({ imported: 0 });
-    return call('seed', { items: SAMPLES }).then(r => load().then(() => r));
-  }
-
-  function wipe() {
-    if (!native) { list.length = 0; return Promise.resolve(); }
-    return call('wipe').then(() => load());
-  }
-
-  /* —— 日期工具 ————————————————————————————————— */
+  const audio = {
+    play: (id) => call("audioPlay", { id }),
+    pause: () => call("audioPause"),
+    stop: () => call("audioStop"),
+    seek: (seconds) => call("audioSeek", { seconds }),
+    status: () => call("audioStatus"),
+  };
+  const exportAs = (format, id) => call("export", { format, id });
   function todayKey() {
     const d = new Date();
-    const p = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
-
-  /** 从数据反向生成分组，天数不写死 —— 真实数据可以是任意一天 */
-  function rebuildDays() {
-    const byDay = new Map();
-    list.forEach(m => {
-      if (!byDay.has(m.day)) byDay.set(m.day, []);
-      byDay.get(m.day).push(m);
-    });
-    const keys = Array.from(byDay.keys()).sort().reverse();
-    const today = todayKey();
-    const yest = new Date(); yest.setDate(yest.getDate() - 1);
-    const yestKey = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
-
-    return keys.map(k => {
-      let label;
-      if (k === today) label = '今天';
-      else if (k === yestKey) label = '昨天';
-      else label = weekName(k);
-      const [, m, d] = k.split('-');
-      return { key: k, label: label + ` · ${Number(m)} 月 ${Number(d)} 日`, items: byDay.get(k) };
-    }).filter(g => g.items.length);
-  }
-
-  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  function weekName(key) {
-    const [y, m, d] = key.split('-').map(Number);
-    return `${m} 月 ${d} 日 · ${WEEK[new Date(y, m - 1, d).getDay()]}`;
-  }
-
   return {
-    native, list, load, save, remove, search, stats,
-    exportAs, rec, seedSamples, wipe, rebuildDays, todayKey,
-    setAll, normalize, SAMPLES,
+    native,
+    list,
+    load,
+    more,
+    save,
+    get,
+    update,
+    remove,
+    restore,
+    search,
+    rec,
+    audio,
+    exportAs,
+    call,
+    normalize,
+    setAll,
+    todayKey,
+    stats: () => totals,
   };
 })();
 
-/* ==========================================================================
-   轻提示
-   —— 导出成功/失败这类结果必须有反馈，否则用户会以为按钮坏了。
-   —— 文案规则：不解释、不铺垫，只说发生了什么。
-   ========================================================================== */
-function toast(msg, kind = 'ok') {
-  let el = document.getElementById('zy-toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'zy-toast';
-    document.body.appendChild(el);
-  }
-  el.className = 'zy-toast ' + kind;
-  el.textContent = msg;
-  // 重新触发一次过渡：连续两次同样文案时不清空 class 就不会有动画
-  el.style.animation = 'none';
-  void el.offsetWidth;
-  el.style.animation = '';
-  clearTimeout(el.__t);
-  el.__t = setTimeout(() => { el.className = 'zy-toast ' + kind + ' out'; }, kind === 'ok' ? 2600 : 4200);
-}
+const Prefs = {
+  get(key, fallback = "") {
+    if (ZY.native) return window.zyPreferences?.[key] ?? fallback;
+    try {
+      return localStorage.getItem("zy-" + key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  },
+  async set(key, value) {
+    if (ZY.native) {
+      await ZY.call("prefsSet", { key, value });
+      window.zyPreferences[key] = value;
+    } else localStorage.setItem("zy-" + key, value);
+  },
+};

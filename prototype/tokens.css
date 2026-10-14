@@ -1,259 +1,150 @@
-/* ==========================================================================
-   只言 · 设计 Token
-   视觉方向：冷石板底 + 青蓝点（Cold Slate, Cyan Signal）
-   --------------------------------------------------------------------------
-   五条不可动摇的规则：
-   1) 层级靠排版和对比建立，不靠装饰。没有渐变、没有玻璃拟态、没有发光边框、
-      没有霓虹。大面积安静，只有极少高对比点。
-   2) 强调色只有一个。青蓝是产品色，红与琥珀只在「失败 / 额度告警」时出现，
-      那是告警语义，不是第二套品牌色。
-   3) **底色的色相必须染向强调色。** 强调色是青蓝，所以中性色阶走 Cool Slate
-      （冷石板），不再用暖棕系 —— 暖底配冷强调色是「米色手账」那条已经饱和的
-      俗套赛道，界面读起来像 2026 年的又一个 AI 产品。
-   4) **浅色主题是「页面后退、卡片浮起」**：页面用色阶 100，卡片走纯白，
-      卡片浮在有色底上。深色主题方向相反：页面最深，卡面逐级变亮
-      （950 → 900 → 800），因为深色下阴影几乎不起作用，**亮度才是深度线索**。
-   5) **所有线都是 alpha，不是十六进制灰。** alpha 白/黑压在任何一档底上都成立，
-      写死色值就会出现「线比它所在的底还暗」的矛盾（上一版就踩过）。
-
-   主题机制：<html data-theme="light|dark">。JS 必须始终写入该属性，
-   URL 参数 ?theme=light|dark 可强制覆盖（截图用），?theme=system 跟随系统。
-   color-scheme 跟着变，滚动条 / 光标 / 原生控件才会一起变。
-   ========================================================================== */
-
-/* —— 深色（默认）：近黑底 + 高亮青蓝 ————————————————————————— */
+/* 只言 · 记忆花园设计变量
+   用户确认的方向：俏皮、温暖，记忆可以长出花。
+   装饰与成功反馈使用花朵；正文、错误、录音与同步状态保持清楚真实。
+   tokens.css 是颜色、字体、间距的唯一来源；garden.css 负责组件布局。
+*/
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-
-  /* —— 底（深色：页面最深，卡面逐级变亮）———————————————————
-     取自 finesse Cool Slate 色阶。深色的深度靠亮度，不靠阴影 */
-  --bg-0:        #14171C;   /* 页面底 = 950，最深的一档 */
-  --bg-1:        #23272F;   /* 卡面 / 输入面 = 900，浮起来 */
-  --bg-2:        #2E343D;   /* 悬停 / 按下 / 选中行：900 与 800 之间 */
-  --bg-3:        #333A46;   /* 浮层 / 弹出面板 = 800 */
-
-  /* —— 线：全部是 alpha，不写死色值 ————————————————————————
-     alpha 白在 950/900/800 任何一档底上都比底亮，天然不会消失 */
-  --line:        rgba(255,255,255,.09);   /* 分隔线：分组之间 */
-  --line-2:      rgba(255,255,255,.14);   /* 控件边框：可交互元素的边界 */
-  --line-3:      rgba(255,255,255,.24);   /* 强边框：聚焦 / 选中 */
-
-  /* —— 字 ————————————————————————————————————
-     四级。数字与时间一律等宽 + tabular-nums，保证列对齐。
-     注意弱化色取 400 档而不是 500：这一档在深色下最容易不达标，
-     必须对「卡面」而不是对「页面」校验（页面更暗，卡面才是它真正的底） */
-  --tx-1:        #F6F7F9;   /* 主文字：用户原话、标题 —— 对卡面 15.1:1 */
-  --tx-2:        #C4CCD8;   /* 次级：AI 产物、说明 —— 对卡面  9.3:1 */
-  --tx-3:        #97A2B3;   /* 弱化：时间戳、标签 —— 对卡面  5.8:1 */
-  --tx-4:        #6F7C91;   /* 最弱：占位、禁用、装饰（非信息文本）3.5:1 */
-
-  /* —— 强调 ————————————————————————————————————
-     青蓝一字未改。在页面底 #14171C 上对比度 10.0:1，在卡面上 8.3:1 */
-  --accent:      #2AD4E9;
-  --accent-hi:   #63E4F3;   /* 悬停 / 命中文字 */
-  --accent-lo:   #1B93A8;   /* 强调色左边框、暗色底 */
-  --accent-bg:   rgba(42,212,233,.12);
-  --accent-bg-2: rgba(42,212,233,.18);
-
-  /* —— 语义（仅告警，不是品牌色）———————————————— */
-  --danger:      #FF6257;
-  --danger-bg:   rgba(255,98,87,.14);
-  --warn:        #DE9C42;
-  --warn-bg:     rgba(222,156,66,.14);
-
-  /* —— 字体 ————————————————————————————————————
-     全产品无衬线。中文走思源黑体（Noto Sans CJK SC）——它在 11–15px
-     这个区间的笔画比苹方更实，小字号不发虚，且 Bold 字重是真正的重粗，
-     不是苹方那种「略微加粗」。苹方作为回落。
-     —— 用户明确要求「粗一点的」，所以中文主字族换成有完整 7 档字重的思源黑 */
-  --font-sans: "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC",
-               -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-               "PingFang SC", "Hiragino Sans GB", "Heiti SC",
-               "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  /* 西文与数字优先走 SF Pro（与 macOS/iOS 系统 UI 同源，字母骨架更精致），
-     中文回落思源黑。拉丁与汉字混排时各走各的最优字形。 */
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo,
-               "Noto Sans CJK SC", "Roboto Mono", monospace;
-
-  /* —— 字号 ————————————————————————————————————
-     4 级正文 + 1 级「记忆原话」的展示级。层级靠字重差 + 缩进，不靠字号跳跃 */
-  --t-display: 17px;   /* 详情页原话 */
-  --t-title:  20px;   /* 页面标题，weight 600 */
-  --t-body:   15px;   /* 正文：记忆原文、表单值 */
-  --t-sm:     13px;   /* 辅助：按钮、次级说明、列表项 */
-  --t-xs:     11.5px; /* 微标签：状态、时间戳、单位 */
-
-  /* —— 圆角 ————————————————————————————————————
-     克制。控件 6 / 卡面 10 / 面板 14，只有麦克风和圆点是圆的 */
+  --bg-0: #1d2822;
+  --bg-1: #28372e;
+  --bg-2: #334639;
+  --bg-3: #3c5040;
+  --line: rgba(224, 233, 203, 0.12);
+  --line-2: rgba(224, 233, 203, 0.2);
+  --line-3: rgba(224, 233, 203, 0.35);
+  --tx-1: #f6f2df;
+  --tx-2: #d0d8c9;
+  --tx-3: #b0bfad;
+  --tx-4: #a5b5a3;
+  --accent: #b4d695;
+  --accent-hi: #cce8b3;
+  --accent-lo: #93b87b;
+  --accent-bg: rgba(180, 214, 149, 0.1);
+  --accent-bg-2: rgba(180, 214, 149, 0.2);
+  --danger: #ffaaa1;
+  --danger-bg: rgba(255, 98, 87, 0.14);
+  --warn: #de9c42;
+  --warn-bg: rgba(222, 156, 66, 0.14);
+  --font-sans: "Hiragino Sans GB", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Noto Sans CJK SC",
+    "Roboto Mono", monospace;
+  --t-display: 17px;
+  --t-title: 20px;
+  --t-body: 15px;
+  --t-sm: 13px;
+  --t-xs: 12px;
   --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --r-sm: 12px;
+  --r-md: 20px;
+  --r-lg: 28px;
   --r-full: 999px;
-
-  /* —— 间距 ———————————————————————————————————— */
-  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
-  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 40px;
-
-  /* —— 动效 ————————————————————————————————————
-     快、克制。深色产品里入场动画最容易显得廉价，所以只做透明度 */
-  --ease: cubic-bezier(.22,.61,.36,1);
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --dur: 150ms;
-
-  /* —— 布局 ————————————————————————————————————
-     --sidebar-mini 是收起态宽度。只在这里定义一次，
-     platform.css 只负责消费，不要在那边重新声明 --sidebar。 */
-  --measure: 560px;      /* macOS 正文栏宽：窄一档，长列表更聚焦 */
-  --sidebar: 212px;
+  --measure: 560px;
+  --sidebar: 208px;
   --sidebar-mini: 56px;
-  --rail: 54px;          /* 时间线左侧时间列 */
-
-  /* ————————————————————————————————————————————
-     以下为主题敏感 token：以前散落在组件里的硬编码色，
-     全部收敛到这里，两套主题各自给值。
-     ———————————————————————————————————————————— */
-
-  /* 强调色上的文字色 */
-  --on-accent:  #05222A;
-
-  /* 侧栏底 + 顶栏底：同色，且比页面底再沉一档 —— 侧栏是「框」，
-     内容区是「纸」，框必须比纸更靠后。顶栏必须与侧栏同色，
-     否则浅色下会出现「顶栏 / 侧栏 / 内容」三段割裂。 */
-  --bg-side:    #101318;
-  --bg-titlebar: #101318;
-  --bg-hover:   #2E343D;
-
-  /* 描边类：告警 / 强调的边框，原来散落成 rgba 字面量 */
-  --accent-line:   rgba(42,212,233,.24);
-  --accent-line-2: rgba(42,212,233,.13);
-  --danger-line:   rgba(255,98,87,.28);
-  --danger-line-2: rgba(255,98,87,.17);
-  --warn-line:     rgba(222,156,66,.28);
-
-  /* 焦点环：键盘可达性。深色下直接用主青蓝 */
-  --focus:      #2AD4E9;
-  --ring-w:     2px;
-
-  /* 遮罩：录音浮层压暗底 */
-  --scrim:      rgba(8,10,14,.76);
-
-  /* 页面光晕：极低对比，跟底同族偏冷，只为让大面积底色不死板 */
-  --glow-core:  rgba(120,150,185,.05);
-  --glow-2:     rgba(255,255,255,.018);
-
-  /* 边缘高光：卡面顶部 1px 内高光，给卡面的实体感 */
-  --edge-hi:    rgba(255,255,255,.05);
-
-  /* 阴影：深色下只用 whisper 一档，大阴影是给浮层的 */
-  --shadow-card: 0 1px 3px rgba(0,0,0,.35);
-  --shadow-float: 0 14px 34px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
-  --shadow-win:   0 34px 84px rgba(0,0,0,.6);
-  --win-ring:     #333A46;
-
-  /* 外壳（原型控制条 / 舞台）：不属于产品，但也不该在浅色下突然变白 */
-  --stage-bg:  #0B0D10;
-  --bar-bg:    #171A20;
-  --bar-line:  #2A303A;
+  --rail: 54px;
+  --on-accent: #203523;
+  --bg-side: #202e25;
+  --bg-titlebar: var(--bg-side);
+  --bg-hover: #2e343d;
+  --accent-line: var(--line-2);
+  --accent-line-2: var(--line);
+  --danger-line: rgba(255, 98, 87, 0.28);
+  --danger-line-2: rgba(255, 98, 87, 0.17);
+  --warn-line: rgba(222, 156, 66, 0.28);
+  --focus: var(--accent);
+  --ring-w: 2px;
+  --scrim: rgba(10, 22, 14, 0.62);
+  --glow-core: transparent;
+  --glow-2: transparent;
+  --edge-hi: rgba(255, 255, 255, 0.05);
+  --shadow-card: 0 5px 15px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 14px 34px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-win: 0 34px 84px rgba(0, 0, 0, 0.6);
+  --win-ring: var(--line);
+  --stage-bg: #152019;
+  --bar-bg: var(--bg-side);
+  --bar-line: var(--line);
+  --petal-pink: #dfa79d;
+  --petal-yellow: #e6c067;
+  --petal-lilac: #beb2d6;
+  --pollen: #f4db82;
+  --stem: #8dac7a;
+  --leaf: #87a470;
+  --flower-line: rgba(42, 52, 28, 0.22);
+  --pot: #bd835e;
+  --pot-line: #78513a;
+  --soil: #745c3e;
+  --garden-shadow: rgba(0, 0, 0, 0.15);
+  --paper-tape: #48513b;
+  --paper-tape-text: #e3dda6;
+  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
 }
-
-/* —— 浅色：Cool Slate 色阶，卡片走纯白浮在有色底上 ————————————————
-   结构与深色相反：页面用色阶 100（有色的冷灰），卡片是纯白。
-   页面后退、卡片浮起 —— 这是浅色产品界面唯一正确的层级方向，
-   上一版「暖米页面 + 更深的暖米卡片」是同色系叠深，卡片浮不起来。
-   强调色仍是青蓝：浅底上 #2AD4E9 会发白，所以压到 #0A7387。色相不变。 */
 [data-theme="light"] {
   color-scheme: light;
-
-  /* 底：页面是色阶 100（有色的冷灰，不是纯白），卡片走纯白 */
-  --bg-0:        #ECEFF3;   /* 页面底 = 100，永远后退 */
-  --bg-1:        #FFFFFF;   /* 卡面 / 输入面：纯白，浮起来 */
-  --bg-2:        #E2E8F0;   /* 悬停 / 按下 / 选中行：白卡上的浅灰 */
-  --bg-3:        #FFFFFF;   /* 浮层 / 弹出面板：白，靠阴影浮起而不是靠底色差 */
-
-  /* 线：alpha 黑压白，任何一档底上都成立 */
-  --line:        rgba(20,23,28,.09);
-  --line-2:      rgba(20,23,28,.14);
-  --line-3:      rgba(20,23,28,.26);
-
-  /* 字 ————————————————————————————————————
-     注意：色阶 500（#6F7C91）压在白卡上只有 4.23:1，达不到正文 4.5:1，
-     所以弱化色下压到 600 档（#566175，6.25:1），最弱色才用 500。 */
-  --tx-1:        #14171C;   /* 主文字：对白卡 17.7:1 */
-  --tx-2:        #454E5E;   /* 次级：对白卡  8.4:1 */
-  --tx-3:        #566175;   /* 弱化：对白卡  6.3:1 */
-  --tx-4:        #6F7C91;   /* 占位 / 禁用，4.2:1（非关键文本） */
-
-  /* 强调：同色相压暗。
-     #0A7387 是在「白字压实底 ≥4.5:1」和「强调色作文字压在白卡上 ≥4.5:1」
-     两个约束同时成立时能取到的最亮值 */
-  --accent:      #0A7387;   /* 白字压在上面 5.50:1；作文字压在白卡上 5.29:1 */
-  --accent-hi:   #095E70;   /* 悬停：更沉 */
-  --accent-lo:   #075566;   /* 作文字：对白卡 7.4:1 */
-  --accent-bg:   rgba(10,115,135,.09);
-  --accent-bg-2: rgba(10,115,135,.15);
-
-  /* 语义色：浅底版本压暗，保证同样的正文对比度 */
-  --danger:      #C23B32;   /* 对白卡 5.29:1 */
-  --danger-bg:   rgba(194,59,50,.07);
-  --warn:        #9A4A0F;   /* 对白卡 6.25:1 */
-  --warn-bg:     rgba(154,74,15,.075);
-
-  /* 强调色上的文字：浅底主题下实底按钮统一用白字 */
-  --on-accent:  #FFFFFF;
-
-  /* 侧栏 / 顶栏同色：比页面底再沉一档，
-     hover 落在 100 与 200 之间，保证「侧栏底 → hover → 选中」三态可区分。 */
-  --bg-side:     #E4E9F0;
-  --bg-titlebar: #E4E9F0;
-  --bg-hover:    #E2E8F0;
-
-  --accent-line:   rgba(10,115,135,.40);
-  --accent-line-2: rgba(10,115,135,.16);
-  --danger-line:   rgba(194,59,50,.30);
-  --danger-line-2: rgba(194,59,50,.14);
-  --warn-line:     rgba(154,74,15,.30);
-
-  --focus:      #0A7387;
-  /* 浅底上遮罩不能压太狠：压到 .35 会把整页推成灰调，比浮层本身还闷 */
-  --scrim:      rgba(26,32,40,.24);
-
-  /* 浅底上光晕要更淡，且跟底同族偏冷，不能是彩色 */
-  --glow-core:  rgba(90,116,148,.07);
-  --glow-2:     rgba(255,255,255,.5);
-
-  /* 浅底靠暗一点的顶部内阴影 + 白色高光来造「纸面边缘」 */
-  --edge-hi:    rgba(255,255,255,.9);
-
-  --shadow-card: 0 1px 3px rgba(20,23,28,.05);
-  --shadow-float: 0 1px 2px rgba(20,23,28,.04), 0 12px 30px rgba(20,23,28,.09);
-  --shadow-win:   0 40px 90px -50px rgba(20,23,28,.35);
-  --win-ring:     rgba(20,23,28,.13);
-
-  --stage-bg:  #DDE3EB;
-  --bar-bg:    #FFFFFF;
-  --bar-line:  rgba(20,23,28,.12);
+  --bg-0: #f8f7f0;
+  --bg-1: #fffefa;
+  --bg-2: #ecefe3;
+  --bg-3: #e3e9d9;
+  --line: rgba(69, 87, 48, 0.12);
+  --line-2: rgba(69, 87, 48, 0.2);
+  --line-3: rgba(69, 87, 48, 0.34);
+  --tx-1: #303d32;
+  --tx-2: #52624f;
+  --tx-3: #667361;
+  --tx-4: #707c68;
+  --accent: #436448;
+  --accent-hi: #304f35;
+  --accent-lo: #628358;
+  --accent-bg: rgba(78, 110, 64, 0.075);
+  --accent-bg-2: rgba(78, 110, 64, 0.13);
+  --danger: #a4433c;
+  --danger-bg: rgba(194, 59, 50, 0.07);
+  --warn: #9a4a0f;
+  --warn-bg: rgba(154, 74, 15, 0.075);
+  --on-accent: #fffdf3;
+  --bg-side: #eef0e5;
+  --bg-titlebar: #e4e9f0;
+  --bg-hover: #e2e8f0;
+  --accent-line: var(--line-2);
+  --accent-line-2: var(--line);
+  --danger-line: rgba(194, 59, 50, 0.3);
+  --danger-line-2: rgba(194, 59, 50, 0.14);
+  --warn-line: rgba(154, 74, 15, 0.3);
+  --focus: #0a7387;
+  --scrim: rgba(34, 48, 33, 0.35);
+  --glow-core: transparent;
+  --glow-2: transparent;
+  --edge-hi: rgba(255, 255, 255, 0.9);
+  --shadow-card: 0 6px 18px rgba(72, 83, 47, 0.045);
+  --shadow-float:
+    0 1px 2px rgba(20, 23, 28, 0.04), 0 12px 30px rgba(20, 23, 28, 0.09);
+  --shadow-win: 0 40px 90px -50px rgba(20, 23, 28, 0.35);
+  --win-ring: rgba(20, 23, 28, 0.13);
+  --stage-bg: #e7e9dc;
+  --bar-bg: #ffffff;
+  --bar-line: rgba(20, 23, 28, 0.12);
+  --petal-pink: #e6b4ad;
+  --petal-yellow: #ebc76e;
+  --petal-lilac: #c9bcdf;
+  --pollen: #f5dc87;
+  --stem: #6b8a52;
+  --leaf: #8fa974;
+  --pot: #deb48e;
+  --pot-line: #a8825d;
+  --soil: #a09064;
+  --garden-shadow: rgba(83, 97, 55, 0.09);
+  --paper-tape: #eee6b7;
+  --paper-tape-text: #70613c;
 }
-
-/* 页面进入：只做透明度，不做位移。位移在深色下会读成「弹出来」 */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-/* 录音中：圆点呼吸 —— 全产品唯一允许的「持续动」 */
-@keyframes pulseDot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: .3; transform: scale(.78); }
-}
-/* 录音中：声波电平 */
-@keyframes waveBar {
-  0%, 100% { transform: scaleY(.52); }
-  50%      { transform: scaleY(1); }
-}
-/* AI 处理中：三点 */
-@keyframes dots {
-  0%, 60%, 100% { opacity: .25; transform: translateY(0); }
-  30%           { opacity: 1;   transform: translateY(-2px); }
-}
-/* 光标闪烁 */
-@keyframes blink { 0%, 48% { opacity: 1; } 50%, 100% { opacity: 0; } }
-/* 骨架屏 */
-@keyframes shimmer { from { background-position: -220px 0; } to { background-position: 320px 0; } }

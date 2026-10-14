@@ -1,0 +1,74 @@
+name: Cross-platform clients
+on:
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: 'Build Android APK (installs SDK/NDK on the runner)'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  core-and-server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: isolated-ci-password
+          POSTGRES_DB: zhiyan_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - run: npm ci
+      - run: npm run test:runtime
+      - run: cargo test --manifest-path core/Cargo.toml --locked
+      - run: pip install -r server/requirements.txt -r server/requirements-dev.txt
+      - run: python -m pytest server/tests -q
+      - run: python -m pytest server/tests/test_sync.py -q
+        env:
+          ZHIYAN_TEST_DATABASE_URL: postgresql+psycopg://postgres:isolated-ci-password@127.0.0.1:5432/zhiyan_test
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run test:runtime
+      - run: cargo test --manifest-path core/Cargo.toml --locked
+      - run: npm run build:desktop
+      - uses: actions/upload-artifact@v4
+        with: {name: zhiyan-windows, path: 'src-tauri/target/release/bundle/'}
+  android:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android'}
+      - run: npm ci
+      - run: npm run test:runtime
+      - run: npm run android:init
+        env: {NDK_HOME: '${{ env.ANDROID_HOME }}/ndk/28.0.13004108'}
+      - run: npm run build:android -- --target aarch64
+        env: {NDK_HOME: '${{ env.ANDROID_HOME }}/ndk/28.0.13004108'}
+      - uses: actions/upload-artifact@v4
+        with: {name: zhiyan-android, path: 'src-tauri/gen/android/app/build/outputs/apk/'}

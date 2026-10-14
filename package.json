@@ -1,0 +1,17 @@
+{
+  "name": "zhiyan-memory-garden",
+  "version": "0.7.0",
+  "private": true,
+  "scripts": {
+    "build:web": "node tools/build-web.js",
+    "tauri": "tauri",
+    "build:desktop": "npm run build:web && tauri build",
+    "android:init": "tauri android init && node tools/android-config.js",
+    "build:android": "npm run build:web && tauri android build --apk",
+    "test:ui": "node prototype/garden-test.js",
+    "test:runtime": "node --test prototype/runtime-test.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0"
+  }
+}

@@ -23,7 +23,7 @@
 //      实测 1 字 / 2 字 / 3 字 / 西文全部命中（见 tests/test_data.swift）。
 //
 // 硬规则（方案第四章）：
-//   · raw_text 永不改写，AI 产出都是可丢弃的派生物
+//   · raw_text 只由用户主动编辑；AI 产出都是可丢弃的派生物
 //   · 索引与数据分离，索引坏了可重建，数据是唯一真相源
 // ============================================================================
 
@@ -69,12 +69,21 @@ public struct Note: Codable {
     }
 }
 
+public enum StoreError: LocalizedError {
+    case failed(String)
+    public var errorDescription: String? { if case .failed(let message) = self { return message }; return nil }
+}
+
 public final class DataStore {
 
     // MARK: - 路径与初始化
 
     public let path: String
     private var db: OpaquePointer?
+    public private(set) var failure: String?
+    public private(set) var initializationError: String?
+    public func clearFailure() { failure = nil }
+
 
     /// iOS 用 Documents（用户文件，能被 iTunes/Files 访问），macOS 用 Application Support
     public static func defaultPath(platform: String) -> String {
@@ -100,9 +109,16 @@ public final class DataStore {
         return dir
     }
 
+    public var mediaDirectory: URL {
+        let dir = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("media", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     public init(path: String) {
         self.path = path
         if sqlite3_open(path, &db) != SQLITE_OK {
+            initializationError = "无法打开记忆数据库：" + errorMessage()
             NSLog("[只言] 打开数据库失败: \(String(cString: sqlite3_errmsg(db)))")
             return
         }
@@ -110,6 +126,7 @@ public final class DataStore {
         exec("PRAGMA journal_mode=WAL;")
         exec("PRAGMA foreign_keys=ON;")
         migrate()
+        initializationError = failure
     }
 
     deinit { if let db { sqlite3_close(db) } }
@@ -121,6 +138,7 @@ public final class DataStore {
         var err: UnsafeMutablePointer<CChar>?
         guard sqlite3_exec(db, sql, nil, nil, &err) == SQLITE_OK else {
             NSLog("[只言] SQL 失败: \(sql)\n  → \(err.map { String(cString: $0) } ?? "?")")
+            failure = err.map { String(cString: $0) } ?? errorMessage()
             sqlite3_free(err)
             return false
         }
@@ -135,6 +153,7 @@ public final class DataStore {
     private func prepare(_ sql: String) -> OpaquePointer? {
         var st: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &st, nil) != SQLITE_OK {
+            failure = errorMessage()
             NSLog("[只言] prepare 失败: \(sql) → \(errorMessage())")
             return nil
         }
@@ -148,14 +167,17 @@ public final class DataStore {
         bindBind(st, bind)
 
         var out: [[String: Any]] = []
-        while sqlite3_step(st) == SQLITE_ROW {
+        var status = sqlite3_step(st)
+        while status == SQLITE_ROW {
             var row: [String: Any] = [:]
             for i in 0..<sqlite3_column_count(st) {
                 let name = String(cString: sqlite3_column_name(st, i))
                 row[name] = columnValue(st, i)
             }
             out.append(row)
+            status = sqlite3_step(st)
         }
+        if status != SQLITE_DONE { failure = errorMessage() }
         return out
     }
 
@@ -203,7 +225,9 @@ public final class DataStore {
         guard let st = prepare(sql) else { return false }
         defer { sqlite3_finalize(st) }
         bindBind(st, bind)
-        return sqlite3_step(st) == SQLITE_DONE
+        let success = sqlite3_step(st) == SQLITE_DONE
+        if !success { failure = errorMessage() }
+        return success
     }
 
     // MARK: - 建表
@@ -371,7 +395,7 @@ public final class DataStore {
     public func save(id: String? = nil, text: String, source: String,
                      tags: [String] = [], summary: String? = nil,
                      audioPath: String? = nil, durationMs: Int = 0,
-                     language: String? = nil, processState: String? = nil) -> String {
+                     language: String? = nil, processState: String? = nil) throws -> String {
         let now = Int(Date().timeIntervalSince1970 * 1000)
         let noteID = id ?? UUID().uuidString
         let raw = text
@@ -384,7 +408,7 @@ public final class DataStore {
 
         if let _ = query("SELECT id FROM notes WHERE id = ?", [(":id", noteID)]).first {
             // 更新：rev 单调递增，供未来的 LWW 合并用
-            _ = execute("""
+            let saved = execute("""
             UPDATE notes SET
               raw_text = ?, search_uni = ?, summary = ?, tags = ?,
               updated_at = ?, source = ?, audio_path = ?, duration_ms = ?,
@@ -395,8 +419,9 @@ public final class DataStore {
                   (":audio", audioPath as Any), (":dur", durationMs),
                   (":lang", language as Any), (":ps", processState as Any),
                   (":id", noteID)])
+            guard saved else { throw StoreError.failed(errorMessage()) }
         } else {
-            _ = execute("""
+            let saved = execute("""
             INSERT INTO notes
               (id, created_at, updated_at, source, raw_text, search_uni,
                summary, tags, entities, audio_path, duration_ms, language,
@@ -407,14 +432,45 @@ public final class DataStore {
                   (":tags", tagsJSON), (":ents", entsJSON), (":audio", audioPath as Any),
                   (":dur", durationMs), (":lang", language as Any),
                   (":ps", processState ?? (raw.isEmpty ? "pending" : "done")), (":dev", "local")])
+            guard saved else { throw StoreError.failed(errorMessage()) }
         }
         return noteID
     }
 
     /// 软删除 + rev 递增。不用真删：同步场景下 tombstone 防「删掉的又被同步回来」
-    public func delete(id: String) {
-        _ = execute("UPDATE notes SET deleted = 1, updated_at = ?, rev = rev + 1 WHERE id = ?",
+    public func delete(id: String) throws {
+        let saved = execute("UPDATE notes SET deleted = 1, updated_at = ?, rev = rev + 1 WHERE id = ?",
                     [(":up", Int(Date().timeIntervalSince1970 * 1000)), (":id", id)])
+        guard saved else { throw StoreError.failed(errorMessage()) }
+    }
+
+    public func restore(id: String) throws {
+        guard execute("UPDATE notes SET deleted = 0, updated_at = ?, rev = rev + 1 WHERE id = ?", [(":now", Int(Date().timeIntervalSince1970 * 1000)), (":id", id)]) else { throw StoreError.failed(errorMessage()) }
+    }
+
+    public func referencesAudio(path: String) -> Bool {
+        !query("SELECT id FROM notes WHERE audio_path = ? LIMIT 1", [(":path", path)]).isEmpty
+    }
+
+    public func get(id: String) -> [String: Any]? {
+        query("SELECT * FROM notes WHERE id = ? AND deleted = 0", [(":id", id)]).first.map { note(from: $0).asDict() }
+    }
+
+    public func updateText(id: String, text: String, tags: [String]) throws {
+        guard let row = query("SELECT * FROM notes WHERE id = ? AND deleted = 0", [(":id", id)]).first else { throw StoreError.failed("这条记忆已不存在") }
+        let n = note(from: row)
+        _ = try save(id: id, text: text, source: n.source, tags: tags, summary: nil,
+                     audioPath: n.audioPath, durationMs: n.durationMs, language: n.language,
+                     processState: text.isEmpty ? n.processState : "done")
+    }
+
+    public func page(before: Int? = nil, beforeID: String = "", limit: Int = 50) -> [[String: Any]] {
+        let size = min(200, max(1, limit))
+        if let before {
+            return query("SELECT * FROM notes WHERE deleted = 0 AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?",
+                         [(":before", before), (":same", before), (":id", beforeID), (":limit", size)]).map { note(from: $0).asDict() }
+        }
+        return query("SELECT * FROM notes WHERE deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?", [(":limit", size)]).map { note(from: $0).asDict() }
     }
 
     // MARK: - 检索（本文件的核心）
@@ -423,30 +479,34 @@ public final class DataStore {
     ///   查询词去空白后长度 >= 3  → trigram 主查 + unigram 补（两者取并集）
     ///   长度 1-2               → 只走 unigram（trigram 对 <3 字符直接失效）
     /// 两个词的查询按 AND 语义：每个词分别走一次表，再取交集。
-    public func search(_ rawQuery: String, limit: Int = 200) -> [[String: Any]] {
-        let terms = rawQuery
-            .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" })
-            .map(String.init)
-            .filter { !$0.isEmpty }
+    public func search(_ rawQuery: String, limit: Int = 200, source: String? = nil) -> [[String: Any]] {
+        let terms = rawQuery.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         guard !terms.isEmpty else { return [] }
-
-        // 每个词先各自算出一批 rowid，再求交集（AND）
-        var perTerm: [[Int]] = []
-        for term in terms {
-            perTerm.append(rowIDs(for: term, limit: limit))
-        }
-        var common = perTerm[0]
-        for set in perTerm.dropFirst() {
-            common = common.filter { set.contains($0) }
-        }
+        // Intersect before limiting. Limiting each term first loses valid AND matches.
+        let perTerm = terms.map { rowIDs(for: $0, limit: -1) }
+        var common = Set(perTerm[0])
+        for rows in perTerm.dropFirst() { common.formIntersection(rows) }
         guard !common.isEmpty else { return [] }
-
-        // 还原成记录，按时间倒序
-        let order = common.sorted().reversed()   // rowid 单调递增≈写入顺序，新的大
-        let ids = order.map(String.init).joined(separator: ",")
-        let rows = query("SELECT * FROM notes WHERE deleted = 0 AND rowid IN (\(ids)) ORDER BY created_at DESC LIMIT ?",
-                         [(":l", limit)])
-        return rows.map { note(from: $0).asDict() }
+        var scores: [Int: Double] = [:]
+        for rows in perTerm {
+            for (rank, row) in rows.enumerated() { scores[row, default: 0] += 1 / Double(60 + rank) }
+        }
+        let ids = common.map(String.init).joined(separator: ",")
+        let rows = query("SELECT rowid AS search_id, * FROM notes WHERE deleted = 0 AND rowid IN (\(ids))")
+        // A phrase may span raw text / summary / tag boundaries in search_uni.
+        // Validate each whole term within one field; never match 上海 against 海上.
+        return rows.filter { row in
+            let n = note(from: row)
+            if let source, !source.isEmpty, n.source != source { return false }
+            let fields = [n.rawText, n.summary ?? ""] + n.tags
+            return terms.allSatisfy { term in fields.contains { $0.range(of: term, options: .caseInsensitive) != nil } }
+        }.sorted { a, b in
+            let sa = scores[a["search_id"] as? Int ?? 0] ?? 0
+            let sb = scores[b["search_id"] as? Int ?? 0] ?? 0
+            if sa != sb { return sa > sb }
+            let ca = a["created_at"] as? Int ?? 0, cb = b["created_at"] as? Int ?? 0
+            return ca == cb ? (a["id"] as? String ?? "") > (b["id"] as? String ?? "") : ca > cb
+        }.prefix(max(0, limit)).map { note(from: $0).asDict() }
     }
 
     /// 单个词的 rowid 集合：trigram 与 unigram 的并集
@@ -480,8 +540,8 @@ public final class DataStore {
             sets.append(inter)
         }
 
-        let union = Set(sets.flatMap { $0 })
-        return Array(union)
+        var seen = Set<Int>()
+        return sets.flatMap { $0 }.filter { seen.insert($0).inserted }
     }
 
     /// 查询词转 FTS5 MATCH 语法：双引号包裹，内部引号翻倍，避免被当作语法
@@ -490,8 +550,7 @@ public final class DataStore {
     }
 
     private func spacedQuery(_ s: String) -> String {
-        return DataStore.spacedForIndex(s).split(separator: " ").map { ftsQuote(String($0)) }
-            .joined(separator: " ")
+        return ftsQuote(DataStore.spacedForIndex(s))
     }
 
     private func intRows(_ sql: String, _ bind: [(String, Any)]) -> [Int] {
@@ -499,17 +558,20 @@ public final class DataStore {
         defer { sqlite3_finalize(st) }
         bindBind(st, bind)
         var out: [Int] = []
-        while sqlite3_step(st) == SQLITE_ROW {
+        var status = sqlite3_step(st)
+        while status == SQLITE_ROW {
             out.append(Int(sqlite3_column_int64(st, 0)))
+            status = sqlite3_step(st)
         }
+        if status != SQLITE_DONE { failure = errorMessage() }
         return out
     }
 
     // MARK: - 导出
 
     /// 全部数据导出为 JSON 字符串（数据是唯一真相源，导出格式跟着数据走）
-    public func exportJSON() -> String {
-        let rows = query("SELECT * FROM notes ORDER BY created_at DESC")
+    public func exportJSON(id: String? = nil) -> String {
+        let rows = id.map { query("SELECT * FROM notes WHERE id = ? AND deleted = 0", [(":id", $0)]) } ?? query("SELECT * FROM notes ORDER BY created_at DESC")
         let notes = rows.map { note(from: $0) }
         let payload: [String: Any] = [
             "product": "只言",
@@ -543,8 +605,8 @@ public final class DataStore {
     }
 
     /// 导出为 Markdown：人直接能读，这是「随时能带走」这个承诺的落地形态
-    public func exportMarkdown() -> String {
-        let rows = query("SELECT * FROM notes WHERE deleted = 0 ORDER BY created_at DESC")
+    public func exportMarkdown(id: String? = nil) -> String {
+        let rows = id.map { query("SELECT * FROM notes WHERE id = ? AND deleted = 0", [(":id", $0)]) } ?? query("SELECT * FROM notes WHERE deleted = 0 ORDER BY created_at DESC")
         let notes = rows.map { note(from: $0) }
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
@@ -569,13 +631,13 @@ public final class DataStore {
 
     /// 写文件。返回实际路径，失败返回 nil
     @discardableResult
-    public func writeExport(format: String, platform: String) -> String? {
-        let content = (format == "md") ? exportMarkdown() : exportJSON()
+    public func writeExport(format: String, platform: String, id: String? = nil) -> String? {
+        let content = (format == "md") ? exportMarkdown(id: id) : exportJSON(id: id)
         let ext = (format == "md") ? "md" : "json"
         let df = DateFormatter()
         df.dateFormat = "yyyyMMdd-HHmmss"
         let name = "只言-导出-\(df.string(from: Date())).\(ext)"
-        let dir = DataStore.mediaDir(platform: platform)
+        let dir = mediaDirectory
         let target = dir.appendingPathComponent(name)
         do {
             try content.write(to: target, atomically: true, encoding: .utf8)
@@ -613,14 +675,16 @@ public final class DataStore {
 
     /// 返回导入条数。示例数据只标 text/voice 来源，不带 AI 摘要
     @discardableResult
-    public func importSamples(_ items: [[String: Any]]) -> Int {
-        exec("BEGIN;")
+    public func importSamples(_ items: [[String: Any]]) throws -> Int {
+        guard exec("BEGIN;") else { throw StoreError.failed(errorMessage()) }
+        var committed = false
+        defer { if !committed { exec("ROLLBACK;") } }
         var n = 0
         for it in items {
             let raw = (it["raw"] as? String) ?? ""
             let ok = query("SELECT id FROM notes WHERE id = ?", [(":id", (it["id"] as? String) ?? "")]).isEmpty
             guard ok else { continue }
-            _ = save(id: it["id"] as? String, text: raw,
+            _ = try save(id: it["id"] as? String, text: raw,
                      source: (it["source"] as? String) ?? "text",
                      tags: it["tags"] as? [String] ?? [],
                      summary: it["summary"] as? String,
@@ -628,7 +692,8 @@ public final class DataStore {
                      processState: "done")
             n += 1
         }
-        exec("COMMIT;")
+        guard exec("COMMIT;") else { throw StoreError.failed(errorMessage()) }
+        committed = true
         return n
     }
 

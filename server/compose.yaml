@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: zhiyan
+      POSTGRES_USER: zhiyan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhiyan"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://zhiyan:${POSTGRES_PASSWORD}@postgres/zhiyan
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-invite}
+      REGISTRATION_INVITE: ${REGISTRATION_INVITE:?Set REGISTRATION_INVITE in .env}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - audio:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  postgres:
+  audio:

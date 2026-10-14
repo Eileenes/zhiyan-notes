@@ -3,6 +3,7 @@
 // 不依赖壳，先把地基测通再往上接。
 
 import Foundation
+import SQLite3
 
 var failures = 0
 var checks = 0
@@ -23,7 +24,7 @@ func section(_ t: String) { print("\n\(t)") }
 // 所以整个测试体包进 @main，而不是改名叫 main.swift。
 @main
 struct Runner {
-static func main() {
+static func main() throws {
 
 // MARK: - 建库
 
@@ -51,7 +52,7 @@ let samples: [(String, String, [String])] = [
 
 let base = Int(Date().timeIntervalSince1970 * 1000)
 for (i, s) in samples.enumerated() {
-    store.save(id: "n\(i+1)", text: s.0, source: s.1, tags: s.2,
+    try store.save(id: "n\(i+1)", text: s.0, source: s.1, tags: s.2,
                summary: nil, processState: "done")
     // 让它们落在过去几天，时间线才有层次
     store.setCreatedAt(id: "n\(i+1)", ms: base - i * 86_400_000)
@@ -107,12 +108,12 @@ for c in cases {
 // MARK: - 更新与软删除
 
 section("⑤ 更新与删除")
-store.save(id: "n2", text: "今天晴了，地铁站里全是伞", source: "text", tags: [], processState: "done")
+try store.save(id: "n2", text: "今天晴了，地铁站里全是伞", source: "text", tags: [], processState: "done")
 let afterUpdate = store.search("下雨")
 check("更新后旧词搜不到", afterUpdate.count == 0, "实际 \(afterUpdate.count)")
 check("更新后新词搜得到", store.search("晴了").count == 1)
 
-store.delete(id: "n5")
+try store.delete(id: "n5")
 check("软删除后不出现在列表", store.loadAll().count == 4, "实际 \(store.loadAll().count)")
 check("软删除后搜不到", store.search("烘焙").count == 0, "实际 \(store.search("烘焙").count)")
 
@@ -155,7 +156,7 @@ check("字数 > 0", (st["chars"] ?? 0) > 0, "实际 \(st["chars"] ?? -1)")
 // MARK: - 空值绑定（回归：曾把字面量 "nil" 写进库）
 
 section("⑨ 空值不得写成字符串 nil")
-store.save(id: "n9", text: "空值回归用例", source: "text",
+try store.save(id: "n9", text: "空值回归用例", source: "text",
            summary: nil, audioPath: nil, language: nil, processState: "done")
 let raw9 = store.dumpRowForTest(id: "n9")
 check("summary 是真 NULL 不是字符串 nil", raw9["summary"] is NSNull,
@@ -166,6 +167,63 @@ check("language 是真 NULL", raw9["language"] is NSNull,
       "实际 \(String(describing: raw9["language"]))")
 check("loadAll 不返回字符串 nil",
       store.loadAll().allSatisfy { !($0["summary"] is String && ($0["summary"] as! String) == "nil") })
+
+// Regression coverage for real failure paths and retrieval boundaries.
+section("⑩ 花园版本回归")
+let regression = DataStore(path: ":memory:")
+try regression.save(id: "sea", text: "海上日出", source: "text")
+check("上海不误中海上", regression.search("上海").isEmpty)
+try regression.save(id: "across", text: "上", source: "text", tags: ["海"])
+check("词组不能跨正文与标签拼接", regression.search("上海").isEmpty)
+try regression.save(id: "shanghai", text: "上海旅行", source: "text", tags: ["旅行"])
+check("准确词组仍能命中", regression.search("上海").count == 1)
+try regression.save(id: "repeat", text: "哈", source: "text")
+check("重复字必须完整出现", regression.search("哈哈").isEmpty)
+try regression.save(id: "voice", text: "", source: "voice", audioPath: "/tmp/fixture.m4a", durationMs: 12345, processState: "pending")
+try regression.updateText(id: "voice", text: "补充录音文字", tags: ["语音"])
+let edited = regression.get(id: "voice")!
+check("编辑保留原始录音", edited["audio"] as? String == "/tmp/fixture.m4a")
+check("编辑保留时长", edited["dur"] as? Double == 12.345)
+try regression.delete(id: "voice")
+check("删除从检索排除", regression.search("补充").isEmpty)
+try regression.restore(id: "voice")
+check("撤销删除恢复检索", regression.search("补充").count == 1)
+check("单条导出不带其他记忆", !regression.exportMarkdown(id: "voice").contains("海上日出"))
+
+let paged = DataStore(path: ":memory:")
+for i in 0..<230 {
+    let id = String(format: "p%03d", i)
+    try paged.save(id: id, text: "花园 " + (i == 0 ? "唯一记忆" : "日常记录"), source: "text")
+    paged.setCreatedAt(id: id, ms: base)
+}
+var pageIDs: [String] = []
+var page = paged.page()
+while !page.isEmpty {
+    pageIDs += page.compactMap { $0["id"] as? String }
+    let last = page.last!
+    page = paged.page(before: last["created_at"] as? Int, beforeID: last["id"] as! String)
+}
+check("同一时间分页不重不漏", pageIDs.count == 230 && Set(pageIDs).count == 230)
+check("多词先求交集再截取，保留长列表末尾命中", paged.search("花园 唯一记忆").count == 1)
+
+try paged.save(id: "filtered", text: "花园语音", source: "voice")
+check("来源筛选在限制结果数之前执行", paged.search("花园", source: "voice").count == 1)
+let unopened = DataStore(path: tmp + "/missing/notes.db")
+check("打不开数据库时保留初始化错误", unopened.initializationError != nil)
+do {
+    _ = try unopened.save(text: "不能假装空库可写", source: "text")
+    check("未打开的数据库拒绝保存", false)
+} catch { check("未打开的数据库拒绝保存", true) }
+
+var failureDB: OpaquePointer?
+check("打开故障注入连接", sqlite3_open(tmp, &failureDB) == SQLITE_OK)
+check("安装写入失败触发器", sqlite3_exec(failureDB, "CREATE TRIGGER fail_save BEFORE INSERT ON notes BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END;", nil, nil, nil) == SQLITE_OK)
+do {
+    _ = try store.save(id: "failed", text: "不能假装保存成功", source: "text")
+    check("写失败必须抛错", false)
+} catch { check("写失败必须抛错", true) }
+check("失败记录未落库", store.get(id: "failed") == nil)
+sqlite3_close(failureDB)
 
 // MARK: - 结论
 

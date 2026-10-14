@@ -1,60 +1,34 @@
 # 只言 ZhiYan
 
-**A Chinese-first voice and text memory app for macOS and iOS.**
-Speak or type a thought once — it stays searchable forever, on your own device.
+**A Chinese-first voice and text memory app.**
+Notes stay local first, with optional custom model providers and cross-device synchronization.
 
 **English** · [简体中文](README.zh-CN.md)
 
-`macOS` `iOS Simulator` `Swift + WKWebView` `SQLite3 / FTS5` `zero third-party dependencies`
+`macOS` `iOS` `Windows / Android in progress` `Rust + Swift + Tauri` `SQLite / PostgreSQL`
 
 ---
 
 ## Status
 
-v0.5. The data path is real end to end — what you record is on disk, survives a
-relaunch, and can be found again by searching Chinese text.
+v0.7 adds real custom model settings, a shared Rust core, account-isolated synchronization, and Tauri client sources for Windows and Android.
 
-### What actually works
+- Custom OpenAI Chat Completions / Responses and Anthropic Messages providers; separate transcription configuration; real connection tests, default providers and persistent jobs.
+- Offline outbox, incremental sync, audio upload / on-demand download, idempotent retries and explicit edit-conflict resolution. FastAPI + PostgreSQL provides the multi-user backend.
+- Existing Memory Garden UI, local drafts, Chinese retrieval, editing, native playback and export remain available.
+- Settings now offers an authenticated loopback MCP server and OpenAI-compatible Chat Completions, with memory search, retrieval, optional creation and provider-backed Q&A. See [external API setup and limits](docs/EXTERNAL-API.md).
 
-| | How it was verified |
-|---|---|
-| Text notes persist in SQLite | Close and relaunch — data is still there |
-| Chinese full-text search, including **1- and 2-character** queries | `selftest`, 11 assertions |
-| Audio recording to local `.m4a` | `rectest`, 6 assertions; AAC mono 44.1 kHz, 2.0 s, real ambient audio |
-| Export to Markdown and JSON files | Both produced and inspected |
-| Tags and summaries are searchable | `selftest` asserts a tag-only match |
-| First launch is an empty database, not demo data | Verified by opening a clean install |
+Mac and iOS Simulator builds have been verified locally. Windows and Android sources / build workflows are present, but Windows has not been built or run, and Android SDK installation was deferred at the user's request: **no APK has been produced**. Protocol tests use controlled local HTTP servers, not commercial provider credentials. The sync service has not been deployed publicly. Physical iOS signing and store distribution remain unconfigured.
 
-Automated coverage: **43/43** data-layer assertions, **11/11** retrieval assertions,
-**6/6** recording assertions.
-
-### What is not built
-
-Listed plainly because a feature list that hides its gaps is not useful to anyone.
-
-| Feature | Status | Why |
-|---|---|---|
-| Speech transcription | **Not built** | Needs a cloud provider and a filed generative-AI registration in China. Recordings are stored as-is and marked *pending transcription*. |
-| AI summaries / auto-tagging | **Not built** | Same blocker. |
-| iCloud sync | **Not built** | The screen exists; no logic is behind it. |
-| iOS device (physical iPhone) build | **Not built** | Requires a provisioning profile, which requires an iPhone connected to the build machine. |
-| Landscape layout | **Not built** | Portrait only. |
-| App Store distribution | **Not built** | Ad-hoc signed and not notarized. |
-
-What this version validates is the core loop — **record → retrieve → export** —
-and the feasibility of Chinese short-query search. The AI layer and sync are
-not connected.
+See [implementation, build and verification notes](docs/CROSS-PLATFORM-PLAN.md) and [server deployment](server/README.md). Each local library currently binds to one sync account; switching libraries is not yet exposed in the UI.
 
 ---
 
 ## Screenshots
 
-| macOS | iOS Simulator |
+| macOS browser preview | iOS Simulator · native app |
 |---|---|
-| ![macOS capture](docs/screenshots/mac-capture.png) | ![iOS capture](docs/screenshots/ios-capture.png) |
-| ![macOS timeline](docs/screenshots/mac-timeline.png) | ![iOS timeline](docs/screenshots/ios-timeline.png) |
-| ![macOS search](docs/screenshots/mac-search.png) | ![iOS search](docs/screenshots/ios-search.png) |
-| ![macOS settings](docs/screenshots/mac-settings.png) | |
+| ![Memory Garden on Mac](docs/screenshots/garden-mac-home.png) | ![Memory Garden on iOS](docs/screenshots/garden-ios-native.png) |
 
 ---
 
@@ -66,21 +40,14 @@ The interface went through three rounds of design rework before this version. A
 SwiftUI rewrite would mean reimplementing that work pixel by pixel, and the cost
 grows the longer it is deferred. The HTML/CSS source in `prototype/` is kept
 verbatim so the rendering is identical, and the data layer is isolated behind a
-small interface — porting to SwiftUI later means rewriting one file
-(`build/Data.swift`), not the app.
+small interface — a future SwiftUI interface can reuse the data and service layers, while views and presentation state still require reimplementation.
 
 The tradeoff is real: you pay for a WebView runtime, and you cannot use the
 platform's native controls directly. For this version that was the right trade.
 
-### The data layer is raw SQLite3, not an ORM
+### Shared data and service core
 
-`build/Data.swift` calls the system SQLite3 C API directly. No GRDB, no
-Core Data, no SwiftData, no SPM dependencies, no CocoaPods. `swiftc` plus the
-platform SDK is the entire toolchain.
-
-GRDB would have been faster to write and is a perfectly good choice. It was
-skipped because a zero-dependency build stays auditable and small, and because
-the choice is reversible at exactly one seam.
+`core/` uses Rust and SQLite / FTS5 for data, retrieval, model protocols, jobs and synchronization. The existing Apple shell calls it through a C ABI; Windows and Android use Tauri. The legacy Swift data layer remains for migration compatibility and native diagnostics.
 
 ### Chinese search needed two FTS5 tables — and the obvious solution silently fails
 
@@ -112,52 +79,20 @@ Two constraints that are easy to miss and were both found by measurement:
 
 ## Architecture
 
-```
-prototype/            HTML + CSS + JS — the entire UI
-  app.js              views, state, actions
-  base.css            design tokens and layout
-  db.js               ZY module: talks to the shell, falls back to fixtures in a browser
-  data.js             demo fixtures, used only when running outside the shell
-        │
-        │  window.zyNative.call({ op, ...payload })  →  Promise
-        ▼
-build/shell.swift     WKWebView host
-                      WKScriptMessageHandler  ("native")
-                      AVAudioRecorder          (real .m4a capture)
-                      AVAudioSession           (iOS microphone permission)
-        │
-        │  op: load · save · delete · search · stats
-        │      export · rebuild · wipe · seed
-        │      recStart · recStop · recCancel · micPerm · log · dump
-        ▼
-build/Data.swift      SQLite3 C API
-                      notes · notes_fts_trigram · notes_fts_unigram
-                      3 write triggers, kept in sync by SQLite itself
-        ▼
-notes.db
-```
-
-```
-notes.db
-├── notes                    all records, incl. soft-deleted (deleted = 1)
-├── notes_fts_trigram        3+ character Chinese / Latin, native FTS5
-├── notes_fts_unigram        per-character, space-separated — short queries
-└── trg_notes_ai / _au / _ad triggers fire on every write
-```
+Apple and Tauri shells share the UI and the Rust data / service core. The core owns SQLite retrieval, model jobs and synchronization; FastAPI / PostgreSQL provides the server. See [architecture and protocol notes](docs/CROSS-PLATFORM-PLAN.md).
 
 ---
 
 ## Build from source
 
 Requires macOS on Apple Silicon and the Xcode command line tools (built and
-tested against Xcode 26.2). No package manager step exists — there are no
-dependencies to install.
+tested against Xcode 26.2), plus Rust and the `aarch64-apple-ios-sim` target. The build script compiles the shared core through Cargo. See the cross-platform guide for Windows and Android requirements.
 
 ```bash
 git clone https://github.com/Eileenes/zhiyan-notes.git
 cd zhiyan-notes
 
-./build/build.sh test     # compile and run the data layer — expect 43/43
+./build/build.sh test     # compile and run the data layer — expect 61/61
 ./build/build.sh all      # both platforms, signing, and the DMG
 ```
 
@@ -195,12 +130,12 @@ launching it catches this.
 
 ## Verify it works, rather than assuming
 
-The app ships with three self-checks that drive the real native bridge from
+The app ships with native self-checks that drive the real native bridge from
 inside the page — no mocks.
 
 ```bash
-./dist/只言.app/Contents/MacOS/只言 --act selftest   # → RESULT=PASS (11/11)
-./dist/只言.app/Contents/MacOS/只言 --act rectest    # → RESULT=PASS (6/6)
+./dist/只言.app/Contents/MacOS/只言 --database /tmp/zhiyan-verification.db --act selftest   # → RESULT=PASS (11/11)
+./dist/只言.app/Contents/MacOS/只言 --database /tmp/zhiyan-verification.db --act rectest    # → RESULT=PASS (6/6)
 ./dist/只言.app/Contents/MacOS/只言 --act probe      # page geometry diagnostics
 ```
 
@@ -223,8 +158,7 @@ Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)** ·
 
 ## Data and privacy
 
-**Nothing leaves the device.** There is no network code, no account, no server,
-no analytics, and no crash reporting.
+**Local first, with optional network features.** Enabling sync sends notes and audio to your configured server. AI actions send the relevant text or audio directly to your chosen provider. API keys stay in each device’s secure storage and are not synced. This version does not provide end-to-end encryption.
 
 | Platform | Location |
 |---|---|
@@ -232,8 +166,7 @@ no analytics, and no crash reporting.
 | macOS media | `~/Library/Application Support/只言/media/` (recordings, exports) |
 | iOS | App container → `Documents/只言/notes.db` |
 
-The settings screen shows the exact path at runtime. Deleting the app does not
-delete your data; deleting that directory does.
+Uninstalling a mobile app may remove its local data. Complete synchronization or export first. Windows and Android use Tauri’s private application data directory.
 
 ---
 
@@ -241,13 +174,16 @@ delete your data; deleting that directory does.
 
 | Path | What it is |
 |---|---|
-| `build/Data.swift` | SQLite schema, FTS5, queries, export — the whole data layer |
+| `core/` | Shared data, retrieval, model protocols and synchronization |
+| `server/` | Multi-user sync API, deployment and tests |
+| `src-tauri/` / `plugins/credentials/` | Windows / Android shell and secure storage |
+| `build/Data.swift` | Apple compatibility access and diagnostics |
 | `build/shell.swift` | WKWebView host, JS bridge, audio recording |
 | `build/build.sh` | Build, package, sign, verify |
-| `build/tests/` | 43 data-layer assertions |
+| `build/tests/` | 61 data-layer assertions |
 | `prototype/` | The UI. Named "prototype" historically; it is the shipping interface now |
 | `icon/` | Icon sources and exports |
-| `docs/screenshots/` | The 8 screenshots used above |
+| `docs/screenshots/` | Current garden screenshots and historical v0.5 screenshots |
 | `PRODUCT-PLAN.md` | Product plan v3.3 (Chinese) |
 
 `prototype/` is the UI source despite the folder name — the shell ships these
@@ -256,22 +192,9 @@ the name was left alone rather than churned.
 
 ---
 
-## Roadmap
+## Next validation
 
-Three things decide whether this project has a future. None of them is done.
-
-1. **Speech transcription and AI summaries.** The actual differentiator. Right
-   now a recording is an audio file labelled *pending transcription*.
-2. **Sync between phone and Mac.** The foundation of a two-device product.
-   CloudKit and a self-hosted server are mutually exclusive choices, and the
-   CloudKit option ties the product to Apple's platform. **This decision is
-   deliberately still open.**
-3. **The "no vendor dependency" angle.** It is only a real advantage where
-   iCloud is unavailable. So it is a consequence of decision 2, not an
-   independent feature.
-
-Until those land, v0.5 is a working capture-and-retrieve loop, not a
-differentiated product. It is honest about that on purpose.
+Configure real providers, deploy the HTTPS sync service, and verify installation, recording permissions, restart and upgrades on Windows and Android. Public operation also needs account recovery, self-service deletion, library switching and data lifecycle management.
 
 ---
 
