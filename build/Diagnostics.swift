@@ -1,5 +1,10 @@
 import Foundation
 
+// Debug-only: Release builds exclude this file (apple/project.yml
+// EXCLUDED_SOURCE_FILE_NAMES) and build.sh adds it only with ZY_DIAGNOSTICS=1.
+// The guard keeps it inert even if it is ever compiled into a non-Debug build.
+#if DEBUG
+
 /// 自拍前的真实交互脚本。
 /// 目的不是「造出」某种界面，而是验证壳里 JS 真的能跑、事件真的绑上了。
 func actionScript(_ name: String) -> String? {
@@ -336,3 +341,5 @@ func actionScript(_ name: String) -> String? {
 /// 加载目标：页面 URL + 读权限目录。
 /// 这两个必须分开：pageURL 上可能挂了 ?plat=ios / ?theme=…，
 /// 而 allowingReadAccessTo 要的是干净的目录 URL（带 query 的目录会让读权限判断失效）。
+
+#endif
