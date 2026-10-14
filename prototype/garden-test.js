@@ -402,6 +402,50 @@ let errors = [];
     "recording duration is displayed in seconds",
     'ZY.list.find(n=>n.audio==="preview-retry.wav").dur===2',
   );
+  // Privacy: consent before the first send to a third-party model, persisted.
+  const consentSetup = `window.aiCalls=[];Services.providers=[{id:"p1",name:"测试服务商",protocol:"openai",baseUrl:"https://api.example.com/v1",model:"m",enabled:true}];Services.call=async(op,a)=>{if(op==="aiEnqueue")aiCalls.push(a);return [];};Services.processQueue=()=>{};`;
+  await evaluate(`localStorage.removeItem("zy-aiConsent");${consentSetup}navigate("timeline")`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check(
+    "consent dialog shown before first model request",
+    `aiCalls.length===0 && document.querySelector(".consent-panel").textContent.includes("api.example.com")`,
+  );
+  await click('[data-act="consent-no"]');
+  await evaluate("window.p1");
+  await check("declining consent sends nothing", `aiCalls.length===0 && !Consent.has(Services.providers[0])`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await click('[data-act="consent-yes"]');
+  await evaluate("window.p1");
+  await check("accepting consent sends the request", `aiCalls.length===1`);
+  await send("Page.reload");
+  await wait('typeof state!=="undefined" && state.loaded');
+  await evaluate(consentSetup + `window.p1=Services.enqueue("summary","n1");0`);
+  await evaluate("window.p1");
+  await check(
+    "consent persists across restart",
+    `aiCalls.length===1 && !document.querySelector(".consent-panel")`,
+  );
+  await evaluate(`Services.providers[0].baseUrl="https://other.example.net/v1";window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check("changed provider address asks again", `aiCalls.length===1`);
+  await click('[data-act="consent-no"]');
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1120,
+    height: 760,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate(`navigate("privacy")`);
+  await check(
+    "privacy policy page renders with revoke control",
+    `document.querySelector(".privacy-page h1") && document.querySelector('[data-act="consent-revoke"]') && !document.querySelector('[data-act="consent-revoke"]').disabled`,
+  );
+  await screenshot("privacy");
+  await click('[data-act="consent-revoke"]');
+  await wait(`!Consent.has({id:"p1",baseUrl:"https://api.example.com/v1"})`);
+  await check("consent can be revoked", `Object.keys(Consent.all()).length===0`);
   await check("no browser JS errors", JSON.stringify(errors.length === 0));
   console.log(JSON.stringify({ checks, screenshots: output }, null, 2));
 })()

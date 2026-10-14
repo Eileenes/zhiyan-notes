@@ -74,6 +74,7 @@ function rootHTML() {
       providers: pageProviders,
       sync: pageSync,
       integrations: pageIntegrations,
+      privacy: pagePrivacy,
     }[state.page]?.() || pageCapture()
   );
 }
@@ -92,7 +93,7 @@ function render() {
   document.querySelectorAll('[data-act="nav"]').forEach((b) => {
     const selected =
       b.dataset.p === state.page ||
-      (["providers", "sync", "integrations"].includes(state.page) &&
+      (["providers", "sync", "integrations", "privacy"].includes(state.page) &&
         b.dataset.p === "settings") ||
       (state.page === "detail" && b.dataset.p === state.returnPage);
     b.classList.toggle("on", selected);
@@ -145,6 +146,7 @@ function readRoute() {
       "providers",
       "sync",
       "integrations",
+      "privacy",
     ].includes(page)
   )
     state.page = page;

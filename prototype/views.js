@@ -149,6 +149,7 @@ function pageSettings() {
       )
       .join("")}</div></div>
     <div class="settings-group"><h2>我的数据</h2><div class="settings-list"><div class="setting-row">${svg("shield")}<div><b>保存在这台设备</b><p>${ZY.native ? "离线也能记录。开启同步或 AI 时，内容会发送到你配置的服务。" : "当前为浏览器预览，数据仅用于演示。"}</p></div><span class="status-pill">本机</span></div>
+      <button class="setting-row" data-act="nav" data-p="privacy">${svg("shield")}<div><b>隐私政策与授权</b><p>哪些内容会离开这台设备，以及如何撤回。</p></div>${svg("chevron")}</button>
       ${[
         ["md", "Markdown", "便于阅读的文字文件"],
         ["json", "JSON", "结构化记录，不包含音频文件"],

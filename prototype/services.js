@@ -163,6 +163,10 @@ const Services = {
       );
       return;
     }
+    if (!(await Consent.ensure(provider, kind))) {
+      toast("已取消，内容没有发送。");
+      return;
+    }
     try {
       this.jobs = await this.call("aiEnqueue", {
         id,
