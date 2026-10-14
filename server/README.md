@@ -34,7 +34,7 @@ curl http://127.0.0.1:8787/health
 docker compose -f compose.yaml -f compose.public.yaml up -d --build
 ```
 
-Caddy 使用 80 / 443 端口申请并续期域名证书。只有域名、DNS 和服务器防火墙就绪后才能验证公网访问；本轮未部署或申请证书。Dockerfile 默认只运行一个 API worker，当前限流为进程内状态。
+完整的 HTTPS 部署、备份恢复与真实客户端 IP 配置见 [HTTPS 部署指南](../docs/DEPLOY-HTTPS.md)。Caddy 使用 80 / 443 端口申请并续期域名证书。只有域名、DNS 和服务器防火墙就绪后才能验证公网访问；本轮未部署或申请证书。Dockerfile 默认只运行一个 API worker，当前限流为进程内状态。
 
 ## 数据与运维
 
@@ -47,6 +47,6 @@ Caddy 使用 80 / 443 端口申请并续期域名证书。只有域名、DNS 和
 - 数据库首次启动自动创建表；现有 schema 的后续版本迁移需要显式设计，不能依赖 `create_all` 修改列。
 - 当前版本没有邮件验证、密码找回、用户自助账号删除、分布式限流、附件清理和历史压缩。先用邀请制验证，再完善公开运营能力。
 
-配置项：`DATABASE_URL`、`ATTACHMENTS_DIR`、`REGISTRATION_MODE`、`REGISTRATION_INVITE`、`MAX_AUDIO_BYTES`（默认 100 MB）、`USER_STORAGE_BYTES`（默认 1 GB）。`API_DOCS=1` 可开启开发用 `/docs`，默认关闭。
+配置项：`DATABASE_URL`、`TRUSTED_PROXIES`（可信反代 IP/CIDR，逗号分隔；为空时忽略 X-Forwarded-For）、`ATTACHMENTS_DIR`、`REGISTRATION_MODE`、`REGISTRATION_INVITE`、`MAX_AUDIO_BYTES`（默认 100 MB）、`USER_STORAGE_BYTES`（默认 1 GB）。`API_DOCS=1` 可开启开发用 `/docs`，默认关闭。
 
 测试见 [跨端说明](../docs/CROSS-PLATFORM-PLAN.md)。部署清单准备完毕不代表已经上线。
