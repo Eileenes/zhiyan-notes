@@ -6,7 +6,7 @@ import CryptoKit
 @_silgen_name("zy_core_free") private func zyCoreFree(_ pointer: UnsafeMutablePointer<CChar>)
 
 enum CoreServices {
-  static let operations: Set<String> = ["deviceID", "providersValidate", "servicesGet", "providersSave", "providerTest", "aiEnqueue", "aiRun", "aiRetry", "syncAuth", "syncBind", "syncRun", "syncLogout", "syncStatus", "syncConflicts", "syncResolve", "audioDownload", "page", "get", "search", "save", "update", "delete", "restore", "load", "stats"]
+  static let operations: Set<String> = ["deviceID", "providersValidate", "servicesGet", "providersSave", "providerTest", "aiEnqueue", "aiRun", "aiRetry", "syncAuth", "syncBind", "syncRun", "syncLogout", "accountDelete", "syncStatus", "syncConflicts", "syncResolve", "audioDownload", "page", "get", "search", "save", "update", "delete", "restore", "load", "stats"]
   static func call(path: String, request: [String: Any]) throws -> Any {
     let data = try JSONSerialization.data(withJSONObject: request)
     let input = String(data: data, encoding: .utf8)!
