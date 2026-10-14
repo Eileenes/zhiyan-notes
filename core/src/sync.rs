@@ -27,6 +27,17 @@ pub fn logout(account: &Value, token: &str) -> Result<Value> {
         token,
     )
 }
+pub fn delete_account(account: &Value, token: &str, password: &str, confirm: &str) -> Result<Value> {
+    let r = model::response(
+        model::client(30)?
+            .delete(format!("{}/v1/account", base(account)?))
+            .bearer_auth(token)
+            .json(&json!({"password":password,"confirm":confirm}))
+            .send()?,
+        token,
+    );
+    r.map_err(|e| e.to_string().replace(password, "[已隐藏]").into())
+}
 fn wire(n: &Value) -> Value {
     let mut v = json!({});
     for key in [
@@ -75,6 +86,31 @@ impl Core {
             self.set_meta("sync_account", &account)?;
             self.set_meta("sync_enabled", &json!(true))?;
             self.set_meta("sync_error", &Value::Null)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => self.db.execute_batch("COMMIT")?,
+            Err(e) => {
+                let _ = self.db.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+        self.sync_status()
+    }
+    /// Forget the sync account on this device. Local notes stay; every
+    /// sync-only table and cursor is reset so a later bind starts from scratch.
+    pub fn unbind(&mut self) -> Result<Value> {
+        self.db.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<()> {
+            self.db.execute_batch(
+                "DELETE FROM sync_outbox; DELETE FROM sync_versions; DELETE FROM sync_conflicts;",
+            )?;
+            self.db.execute(
+                "DELETE FROM app_meta WHERE key IN ('sync_account','sync_enabled','sync_cursor','sync_error','sync_more','sync_inflight','sync_lease','last_synced')",
+                [],
+            )?;
+            // Server copies are gone: local recordings must be re-uploaded if bound again.
+            self.db.execute("UPDATE notes SET attachment_id=NULL WHERE audio_path IS NOT NULL", [])?;
             Ok(())
         })();
         match result {

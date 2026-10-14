@@ -410,3 +410,12 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+.danger-zone {
+  margin-top: 18px;
+  border-color: var(--danger-line-2);
+}
+.btn-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-line);
+}

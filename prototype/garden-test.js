@@ -423,6 +423,30 @@ let errors = [];
     "recording duration is displayed in seconds",
     'ZY.list.find(n=>n.audio==="preview-retry.wav").dur===2',
   );
+  // Account deletion: two confirmation steps, then local binding is cleared.
+  await evaluate(
+    `window.deleteCalls=[];Services.call=async(op,args)=>{deleteCalls.push([op,args]);if(op==="secretGet")return "tok";if(op==="accountDelete")return {account:null,enabled:false,pending:0,conflicts:0};if(op==="servicesGet")return {providers:[],sync:{account:null,enabled:false},jobs:[]};return null;};Services.sync={enabled:true,account:{username:"alice",url:"https://sync.example",user_id:"u1"},pending:0,conflicts:0};navigate("sync")`,
+  );
+  await click('[data-service="delete-account-start"]');
+  await input('[data-delete-field="confirm"]', "bob");
+  await input('[data-delete-field="password"]', "fixture-password-123");
+  await click('[data-service="delete-account-next"]');
+  await check(
+    "wrong username blocks account deletion",
+    'Services.deleteAccount.step===1 && !deleteCalls.some(c=>c[0]==="accountDelete")',
+  );
+  await input('[data-delete-field="confirm"]', "alice");
+  await click('[data-service="delete-account-next"]');
+  await check(
+    "account deletion asks a second time",
+    '!!document.querySelector(\'[data-service="delete-account-confirm"]\') && !deleteCalls.some(c=>c[0]==="accountDelete")',
+  );
+  await click('[data-service="delete-account-confirm"]');
+  await wait("!Services.working");
+  await check(
+    "account deletion clears local binding and token",
+    'deleteCalls.some(c=>c[0]==="accountDelete"&&c[1].confirm==="alice"&&c[1].token==="tok") && deleteCalls.some(c=>c[0]==="secretDelete"&&c[1].key==="sync.u1") && !Services.sync.enabled && Services.deleteAccount.password===""',
+  );
   await check("no browser JS errors", JSON.stringify(errors.length === 0));
   console.log(JSON.stringify({ checks, screenshots: output }, null, 2));
 })()
