@@ -86,7 +86,7 @@ fn moving_database_repairs_local_audio_without_queueing_an_edit() {
     let note = c.get("voice", false).unwrap().unwrap();
     assert_eq!(
         note["audio"].as_str().unwrap(),
-        new.join("media/voice.wav").to_str().unwrap()
+        new.join("media").join("voice.wav").to_str().unwrap()
     );
     assert_eq!(note["rev"], 1);
     assert_eq!(

@@ -8,6 +8,8 @@ on:
         default: false
   push:
     branches: [main]
+  # Also on PRs, so changes are checked on Windows/Linux before they reach main.
+  pull_request:
 permissions:
   contents: read
 jobs:
