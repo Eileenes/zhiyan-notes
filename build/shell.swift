@@ -193,6 +193,11 @@ func makeWebView(bridge: NativeBridge) -> WKWebView {
 /// 表现为「脚本启动了但一条断言都没输出」—— 而且退出码 0，看起来像成功。
 let SELF_TEST_ACTIONS: Set<String> = ["selftest", "rectest", "probe", "garden-test", "draft-check", "export-check", "services-test", "gateway-test"]
 
+#if !DEBUG
+/// Release builds ship without Diagnostics.swift: no --act self-test scripts.
+func actionScript(_ name: String) -> String? { nil }
+#endif
+
 func runActionThenSnapshot(webView w: WKWebView, path: String?, act: String?) {
     // 没有 action 也没有截图路径 → 什么都不用做，正常启动路径
     guard act != nil || path != nil else { return }

@@ -99,7 +99,7 @@ cd zhiyan-notes
 | Target | Output |
 |---|---|
 | `build.sh mac` | `dist/只言.app`, `dist/只言.dmg` |
-| `build.sh ios` | `dist/ZhiYan-sim.app` (arm64 simulator) |
+| `build.sh ios` | `dist/ZhiYan.app` (arm64 simulator, Debug build of apple/project.yml; needs xcodegen) |
 | `build.sh test` | data-layer assertions only |
 
 The script verifies each step rather than trusting it: web assets are

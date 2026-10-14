@@ -3,7 +3,8 @@
 #   apple/scripts/build-xcframework.sh   # Rust core -> apple/build/ZhiYanCore.xcframework
 #   cd apple && xcodegen generate        # -> apple/ZhiYan.xcodeproj (not committed)
 # Source of truth stays in build/*.swift, core/ and prototype/; the generated
-# project only references them, so build/build.sh keeps working unchanged.
+# project only references them. build/build.sh ios builds the simulator app
+# from this project (Debug); build/build.sh mac still compiles directly.
 name: ZhiYan
 options:
   bundleIdPrefix: com.duketao
@@ -16,7 +17,10 @@ settings:
     MARKETING_VERSION: "0.7"
     CURRENT_PROJECT_VERSION: "7"
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""            # set your Team ID locally (or via xcconfig); never commit secrets
+    # Placeholder on purpose: the Team ID is per developer/organisation. Set it
+    # locally (Xcode Signing & Capabilities, or DEVELOPMENT_TEAM=... on the
+    # xcodebuild command line) -- see apple/README.md. Simulator builds do not need it.
+    DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     DEAD_CODE_STRIPPING: YES
@@ -24,8 +28,12 @@ settings:
   configs:
     Debug:
       SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     Release:
       SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
+      # Self-test scripts (--act) are debug-only; not compiled into Release.
+      EXCLUDED_SOURCE_FILE_NAMES: Diagnostics.swift
 
 targetTemplates:
   ZhiYanApp:
@@ -36,7 +44,7 @@ targetTemplates:
       - path: ../build/Audio.swift
       - path: ../build/Services.swift
       - path: ../build/NativeBridge.swift
-      - path: ../build/Diagnostics.swift
+      - path: ../build/Diagnostics.swift   # Debug only (excluded in Release, see configs)
       - path: Config/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:

@@ -11,13 +11,13 @@ import wave
 
 project = pathlib.Path(__file__).resolve().parents[2]
 device = sys.argv[1] if len(sys.argv) > 1 else 'booted'
-bundle = 'com.duketao.zhiyan.sim'
+bundle = 'com.duketao.zhiyan'  # Xcode project bundle id (apple/project.yml)
 def run(*args):
     result = subprocess.run(['xcrun', 'simctl', *args], text=True, capture_output=True)
     if result.returncode: raise RuntimeError(result.stderr or result.stdout)
     return result.stdout.strip()
 
-run('install', device, str(project / 'dist/ZhiYan-sim.app'))
+run('install', device, str(project / 'dist/ZhiYan.app'))
 container = pathlib.Path(run('get_app_container', device, bundle, 'data'))
 isolated = container / 'Documents/GardenVerification'
 media = isolated / 'media'

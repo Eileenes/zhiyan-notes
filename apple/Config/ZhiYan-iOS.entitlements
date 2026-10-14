@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- Provider API keys, sync token and gateway key live in the Keychain
-	     (build/Services.swift). Replaces build/simulator.entitlements. -->
+	     (build/Services.swift). -->
 	<key>keychain-access-groups</key>
 	<array><string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string></array>
 </dict>
