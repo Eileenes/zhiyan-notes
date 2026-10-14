@@ -11,13 +11,18 @@ import wave
 
 project = pathlib.Path(__file__).resolve().parents[2]
 device = sys.argv[1] if len(sys.argv) > 1 else 'booted'
-bundle = 'com.duketao.zhiyan.sim'
+# Script build: dist/ZhiYan-sim.app; Xcode project build (PR #6): dist/ZhiYan.app.
+apps = [project / n for n in ('dist/ZhiYan.app', 'dist/ZhiYan-sim.app') if (project / n).is_dir()]
+if len(apps) != 1: raise SystemExit(f'expected exactly one iOS app in dist/, found {apps}')
+app = apps[0]
+import plistlib
+bundle = plistlib.loads((app / 'Info.plist').read_bytes())['CFBundleIdentifier']
 def run(*args):
     result = subprocess.run(['xcrun', 'simctl', *args], text=True, capture_output=True)
     if result.returncode: raise RuntimeError(result.stderr or result.stdout)
     return result.stdout.strip()
 
-run('install', device, str(project / 'dist/ZhiYan-sim.app'))
+run('install', device, str(app))
 container = pathlib.Path(run('get_app_container', device, bundle, 'data'))
 isolated = container / 'Documents/GardenVerification'
 media = isolated / 'media'

@@ -221,10 +221,17 @@ let errors = [];
     'getComputedStyle(document.activeElement).outlineStyle==="none"',
   );
   await evaluate(
-    'document.querySelector("#provider-protocol").scrollIntoView({block:"center"})',
+    'document.querySelector("#provider-protocol").scrollIntoView({block:"center",behavior:"instant"})',
   );
-  await sleep(50);
+  // Wait until scrolling has settled (position unchanged across frames) so the
+  // click lands on the control instead of racing a scroll/re-render on slow CI.
+  await evaluate(`new Promise((done)=>{const el=document.querySelector("#provider-protocol");let last=NaN,same=0,n=0;
+    const tick=()=>{const y=el.getBoundingClientRect().top;same=y===last?same+1:0;last=y;
+      if(same>=3||++n>120)done();else requestAnimationFrame(tick);};requestAnimationFrame(tick);})`);
   await click("#provider-protocol");
+  await wait(
+    '!document.querySelector("#protocol-options").hidden && document.querySelector("#provider-protocol").getAttribute("aria-expanded")==="true"',
+  ).catch(() => {});
   await check(
     "protocol menu expands inside the app",
     '!document.querySelector("#protocol-options").hidden && document.querySelector("#provider-protocol").getAttribute("aria-expanded")==="true"',
@@ -276,10 +283,17 @@ let errors = [];
     mobile: false,
   });
   await evaluate(
-    'document.querySelector("#provider-protocol").scrollIntoView({block:"center"})',
+    'document.querySelector("#provider-protocol").scrollIntoView({block:"center",behavior:"instant"})',
   );
-  await sleep(50);
+  // Wait until scrolling has settled (position unchanged across frames) so the
+  // click lands on the control instead of racing a scroll/re-render on slow CI.
+  await evaluate(`new Promise((done)=>{const el=document.querySelector("#provider-protocol");let last=NaN,same=0,n=0;
+    const tick=()=>{const y=el.getBoundingClientRect().top;same=y===last?same+1:0;last=y;
+      if(same>=3||++n>120)done();else requestAnimationFrame(tick);};requestAnimationFrame(tick);})`);
   await click("#provider-protocol");
+  await wait(
+    '!document.querySelector("#protocol-options").hidden && document.querySelector("#provider-protocol").getAttribute("aria-expanded")==="true"',
+  ).catch(() => {});
   await check(
     "menu and Settings remain visible at the minimum desktop size",
     `(()=>{const menu=document.querySelector('#protocol-options').getBoundingClientRect(),scroll=document.querySelector('.content-scroll').getBoundingClientRect(),settings=document.querySelector('.sidebar [data-p="settings"]').getBoundingClientRect();return menu.top>=scroll.top && menu.bottom<=scroll.bottom && settings.bottom<=innerHeight;})()`,
