@@ -42,6 +42,19 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
     {
       preferences = values
     }
+    // The Rust core enforces model consent from its own database (model.rs
+    // Core::consented). Re-sync on launch so consent given by an older build,
+    // which only wrote preferences.json, is not lost.
+    if let consent = preferences["aiConsent"] {
+      try? Self.syncConsent(consent, database: store.path)
+    }
+  }
+
+  /// Mirror the aiConsent preference into the core DB (app_meta.preferences),
+  /// which is what aiRun and the gateway check before sending anything.
+  static func syncConsent(_ value: String, database: String) throws {
+    _ = try CoreServices.call(
+      path: database, request: ["op": "prefsSet", "key": "aiConsent", "value": value])
   }
 
   var bootstrapPreferences: [String: String] { preferences }
@@ -174,9 +187,12 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
         reply(seq, true, "ok")
       case "prefsSet":
         guard let key = m["key"] as? String,
-          ["draft", "theme", "onboarded", "sidebar", "recordingDraft"].contains(key),
+          ["draft", "theme", "onboarded", "sidebar", "recordingDraft", "aiConsent"].contains(key),
           let value = m["value"] as? String
         else { throw StoreError.failed("无效的设置") }
+        // Core first: if it fails, preferences.json is left unchanged so the
+        // UI never shows consent that the core would not honour.
+        if key == "aiConsent" { try Self.syncConsent(value, database: store.path) }
         var next = preferences
         next[key] = value
         try JSONEncoder().encode(next).write(to: preferencesURL, options: .atomic)

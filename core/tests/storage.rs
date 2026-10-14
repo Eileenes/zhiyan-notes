@@ -94,3 +94,39 @@ fn moving_database_repairs_local_audio_without_queueing_an_edit() {
         new.join("media/voice.wav").canonicalize().unwrap()
     );
 }
+
+#[test]
+fn ai_jobs_require_current_consent_including_retries() {
+    use std::net::TcpListener;
+    let dir = tempfile::tempdir().unwrap();
+    let mut core = Core::open(dir.path().join("notes.db")).unwrap();
+    core.call(json!({"op":"save","id":"n1","text":"私密正文","tags":[]})).unwrap();
+    // Any connection to this port would mean content was sent.
+    let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+    upstream.set_nonblocking(true).unwrap();
+    let port = upstream.local_addr().unwrap().port();
+    let p = json!({"id":"p1","name":"P","protocol":"openai","model":"m","baseUrl":format!("http://127.0.0.1:{port}/v1")});
+    core.call(json!({"op":"providersSave","providers":[p]})).unwrap();
+    let job = |core: &mut Core| -> String {
+        let jobs = core.call(json!({"op":"aiEnqueue","id":"n1","kind":"summary","provider_id":"p1"})).unwrap();
+        jobs.as_array().unwrap().iter().find(|j| j["status"] == "pending").unwrap()["id"].as_str().unwrap().to_string()
+    };
+    // Never consented.
+    let id = job(&mut core);
+    let e = core.call(json!({"op":"aiRun","id":id,"key":"k"})).unwrap_err().to_string();
+    assert!(e.contains("尚未同意"), "{e}");
+    // Retry of the same job still checks.
+    core.call(json!({"op":"aiRetry","id":id})).unwrap();
+    assert!(core.call(json!({"op":"aiRun","id":id,"key":"k"})).is_err());
+    // Consent for a different origin does not count.
+    core.call(json!({"op":"prefsSet","key":"aiConsent","value":"{\"p1|https://other.example\":1}"})).unwrap();
+    core.call(json!({"op":"aiRetry","id":id})).unwrap();
+    assert!(core.call(json!({"op":"aiRun","id":id,"key":"k"})).unwrap_err().to_string().contains("尚未同意"));
+    // Queued while consented, then revoked before it runs: nothing is sent.
+    let granted = format!("{{\"p1|http://127.0.0.1:{port}\":1}}");
+    core.call(json!({"op":"prefsSet","key":"aiConsent","value":granted})).unwrap();
+    let queued = job(&mut core);
+    core.call(json!({"op":"prefsSet","key":"aiConsent","value":"{}"})).unwrap();
+    assert!(core.call(json!({"op":"aiRun","id":queued,"key":"k"})).unwrap_err().to_string().contains("尚未同意"));
+    assert!(upstream.accept().is_err(), "no request may reach the provider");
+}

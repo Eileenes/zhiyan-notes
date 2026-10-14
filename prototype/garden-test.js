@@ -461,6 +461,81 @@ let errors = [];
     "account deletion clears local binding and token",
     'deleteCalls.some(c=>c[0]==="accountDelete"&&c[1].confirm==="alice"&&c[1].token==="tok") && deleteCalls.some(c=>c[0]==="secretDelete"&&c[1].key==="sync.u1") && !Services.sync.enabled && Services.deleteAccount.password===""',
   );
+  // Privacy: consent before the first send to a third-party model, persisted.
+  const consentSetup = `window.aiCalls=[];Services.providers=[{id:"p1",name:"测试服务商",protocol:"openai",baseUrl:"https://api.example.com/v1",model:"m",enabled:true}];Services.call=async(op,a)=>{if(op==="aiEnqueue")aiCalls.push(a);return [];};Services.processQueue=()=>{};`;
+  await evaluate(`localStorage.removeItem("zy-aiConsent");${consentSetup}navigate("timeline")`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check(
+    "consent dialog shown before first model request",
+    `aiCalls.length===0 && document.querySelector(".consent-panel").textContent.includes("api.example.com")`,
+  );
+  await click('[data-act="consent-no"]');
+  await evaluate("window.p1");
+  await check("declining consent sends nothing", `aiCalls.length===0 && !Consent.has(Services.providers[0])`);
+  await evaluate(`window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await click('[data-act="consent-yes"]');
+  await evaluate("window.p1");
+  await check("accepting consent sends the request", `aiCalls.length===1`);
+  await send("Page.reload");
+  await wait('typeof state!=="undefined" && state.loaded');
+  await evaluate(consentSetup + `window.p1=Services.enqueue("summary","n1");0`);
+  await evaluate("window.p1");
+  await check(
+    "consent persists across restart",
+    `aiCalls.length===1 && !document.querySelector(".consent-panel")`,
+  );
+  await evaluate(`Services.providers[0].baseUrl="https://other.example.net/v1";window.p1=Services.enqueue("summary","n1");0`);
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check("changed provider address asks again", `aiCalls.length===1`);
+  await click('[data-act="consent-no"]');
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1120,
+    height: 760,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate(`navigate("privacy")`);
+  await check(
+    "privacy policy page renders with revoke control",
+    `document.querySelector(".privacy-page h1") && document.querySelector('[data-act="consent-revoke"]') && !document.querySelector('[data-act="consent-revoke"]').disabled`,
+  );
+  await screenshot("privacy");
+  await click('[data-act="consent-revoke"]');
+  await wait(`!Consent.has({id:"p1",baseUrl:"https://api.example.com/v1"})`);
+  await check("consent can be revoked", `Object.keys(Consent.all()).length===0`);
+  // Consent on retry and for jobs queued before a revocation.
+  // Reload: the block above stubbed Services.processQueue.
+  await send("Page.reload");
+  await wait('typeof state!=="undefined" && state.loaded');
+  await evaluate(`window.ops=[];window.savedNative=ZY.native;window.savedCall=ZY.call;ZY.native=true;window.zyPreferences={};ZY.call=async(op,a)=>{ops.push(op);return true;};Services.ready=true;Services.processing=false;
+    Services.providers=[{id:"p1",name:"测试服务商",protocol:"openai",baseUrl:"https://api.example.com/v1",model:"m",enabled:true}];
+    Services.jobs=[{id:"j1",note_id:"n1",kind:"summary",provider_id:"p1",status:"failed",error:"x"}];
+    Services.call=async(op,a)=>{ops.push(op);if(op==="servicesGet")return {providers:Services.providers,sync:Services.sync,jobs:Services.jobs};if(op==="aiRetry"){Services.jobs[0].status="pending";return true;}if(op==="aiRun"){Services.jobs[0].status="done";return {};}return "k";};
+    ZY.load=async()=>{};navigate("providers");0`);
+  await click('[data-service="retry-job"]');
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await check("retry asks for consent before anything is sent", `!ops.includes("aiRetry") && !ops.includes("aiRun")`);
+  await click('[data-act="consent-no"]');
+  await wait(`!document.querySelector(".consent-panel")`);
+  await check("declined retry sends nothing", `!ops.includes("aiRetry") && !ops.includes("aiRun") && Services.jobs[0].status==="failed"`);
+  await click('[data-service="retry-job"]');
+  await wait(`!!document.querySelector('[data-act="consent-yes"]')`);
+  await click('[data-act="consent-yes"]');
+  await wait(`ops.includes("aiRun")`);
+  await check("accepted retry goes through aiRetry then aiRun", `ops.indexOf("aiRetry")<ops.indexOf("aiRun")`);
+  await evaluate(`ops.length=0;Services.jobs=[{id:"j2",note_id:"n1",kind:"summary",provider_id:"p1",status:"pending"}];Consent.revokeAll().then(()=>Services.processQueue());0`);
+  await wait(`!Services.processing && ops.includes("servicesGet")`);
+  await check("queued job is not sent after consent is revoked", `!ops.includes("aiRun") && Services.jobs[0].status==="pending"`);
+  await evaluate(`Consent.grant(Services.providers[0]).then(()=>{Services.providers[0].baseUrl="https://moved.example/v1";return Services.processQueue();});0`);
+  await wait(`!Services.processing`);
+  await check("queued job is not sent after the provider address changes", `!ops.includes("aiRun")`);
+  await evaluate(`ZY.native=savedNative;ZY.call=savedCall;Consent.revokeAll();0`);
+  await check(
+    "consent copy names note body and transcripts",
+    `(()=>{showConsent({id:"p",name:"n",baseUrl:"https://a.example"},"summary");const t=document.querySelector(".consent-panel").textContent;Consent.answer(false);return t.includes("正文")&&t.includes("转写文字");})()`,
+  );
   await check("no browser JS errors", JSON.stringify(errors.length === 0));
   console.log(JSON.stringify({ checks, screenshots: output }, null, 2));
 })()

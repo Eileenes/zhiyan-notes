@@ -261,7 +261,7 @@ impl Core {
                 .map(Value::Object)
                 .unwrap_or(json!({}))),
             "prefsSet" => {
-                if !["draft", "theme", "sidebar", "recordingDraft", "onboarded"]
+                if !["draft", "theme", "sidebar", "recordingDraft", "onboarded", "aiConsent"]
                     .contains(&s(&m, "key"))
                 {
                     return Err("无效的设置".into());

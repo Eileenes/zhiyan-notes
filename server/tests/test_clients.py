@@ -215,6 +215,8 @@ def test_model_protocols_and_non_destructive_jobs(tmp_path, protocols):
         for p in ("openai", "anthropic", "openai-responses", "transcription")
     ]
     c.call("providersSave", providers=providers)
+    # Sending requires the user's consent per provider + origin (privacy.js).
+    c.call("prefsSet", key="aiConsent", value=json.dumps({f'{p["id"]}|{url}': 1 for p in providers}))
     for p in providers:
         assert c.call("providerTest", provider=p, key="fixture-key")["ok"]
     for p in providers[:3]:
