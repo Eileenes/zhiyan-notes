@@ -1,44 +1,3 @@
-/* ==========================================================================
-   平台外壳：macOS 窗口 / iPhone 视口 / 原型控制条
-   —— 外壳属于平台，组件属于产品。两者分离，所以组件层两端完全复用
-   ========================================================================== */
-
-/* ——————————————————————————————————————————————————
-   原型控制条：明确不属于产品设计，避免和 UI 混淆
-   —————————————————————————————————————————————————— */
-.proto-bar {
-  position: fixed; top: 0; left: 0; right: 0; height: 38px; z-index: 999;
-  display: flex; align-items: center; gap: 10px; padding: 0 14px;
-  background: var(--bar-bg); color: var(--tx-3);
-  border-bottom: 1px solid var(--bar-line);
-  font-family: var(--font-sans); font-size: 12px;
-}
-.proto-bar .pb-title { font-weight: 600; color: var(--tx-1); letter-spacing: .02em; }
-.proto-bar .pb-sep { width: 1px; height: 16px; background: var(--bar-line); }
-.proto-switch {
-  display: flex; gap: 1px; background: var(--bg-1);
-  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px;
-}
-.proto-switch button {
-  padding: 3px 10px; border-radius: 4px; color: var(--tx-3);
-  font-size: 11.5px; transition: all var(--dur) var(--ease); white-space: nowrap;
-}
-.proto-switch button:hover { color: var(--tx-1); background: var(--bg-2); }
-.proto-switch button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
-.proto-hint { margin-left: auto; color: var(--tx-4); font-size: 11px; }
-
-/* 原型条在窄视口必须自己收窄，否则换行会把下面的设备外壳顶出画面 */
-@media (max-width: 900px) {
-  .proto-bar .pb-desc { display: none; }
-  .proto-bar .pb-sep:last-of-type { display: none; }
-}
-
-.proto-stage {
-  padding: 66px 32px 48px; min-height: 100vh;
-  display: flex; justify-content: center; align-items: flex-start;
-  background: var(--stage-bg);
-}
-
 /* 静帧模式：截图/视觉比对时禁用所有动画，避免抓到动画中间帧 */
 body.still *, body.still *::before, body.still *::after {
   animation-duration: 0s !important;
@@ -49,65 +8,35 @@ body.still *, body.still *::before, body.still *::after {
 /* ——————————————————————————————————————————————————
    macOS 窗口
    —————————————————————————————————————————————————— */
+/* 结构属于产品；窗口尺寸、圆角、阴影等外框装饰在 preview.css（仅原型预览加载） */
 .mac-window {
-  width: 1180px; height: 812px; flex: none;
+  flex: none;
   background: var(--bg-0);
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--win-ring), var(--shadow-win);
   overflow: hidden;
   display: flex; flex-direction: column;
   position: relative;
-  animation: fadeIn 220ms var(--ease) both;
 }
 
 /* 顶栏与侧栏同色，视觉上连成一片 —— 只保留右侧内容区作为独立的一层。
    原来用 --bg-1（卡面色），浅色下与 --bg-side 差一档，
    再夹一条 border-bottom，切成三段。去掉底色差与那条线。 */
-.mac-titlebar {
-  height: 38px; flex: none;
-  display: flex; align-items: center;
-  padding: 0 12px;
-  background: var(--bg-titlebar);
-  position: relative; z-index: 20;
-  -webkit-app-region: drag;
-}
-.lights { display: flex; gap: 8px; }
 .light { width: 11px; height: 11px; border-radius: 50%; }
 .light.r { background: #ED6A5E; } .light.y { background: #F4BF4F; } .light.g { background: #61C454; }
-.mac-title {
-  position: absolute; left: 0; right: 0; text-align: center;
-  font-size: 12.5px; font-weight: 500; color: var(--tx-3);
-  pointer-events: none;
-}
-.mac-title-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.mac-idx {
-  font-family: var(--font-mono); font-size: 10.5px; color: var(--tx-4);
-  padding: 2px 7px; background: var(--bg-2);
-  border: 1px solid var(--line); border-radius: var(--r-xs);
-  white-space: nowrap;
-}
 
 .mac-body { flex: 1; display: flex; min-height: 0; }
 
 /* 侧栏与顶栏同色连成一片，不画分隔线 —— 分界线改由内容区的 border-left 承担 */
 .sidebar {
-  width: var(--sidebar); flex: none;
-  background: var(--bg-side);
   display: flex; flex-direction: column;
-  padding: 16px 10px 12px;
   /* 宽度随 --sidebar 变化，切换是布局动画而非滑出，避免「还在加载」的错觉 */
   transition: width 160ms var(--ease);
 }
-
-.sb-nav { display: flex; flex-direction: column; gap: 1px; }
 /* 记一笔曾经是 .sb-primary：常驻青蓝字色 + 选中加一条青蓝左边线 + 下方多 8px 间距。
    结果是同一个导航栏里两种选中态、两种间距、两种未选中色 ——
    用户要切换页面时得先判断自己在第几组。三个入口是平级的，样式必须完全一致，
    区分只靠「块面 + 青蓝图标 + 600 字重」这一套。 */
 .sb-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 7px 8px; border-radius: var(--r-sm);
-  font-size: var(--t-sm); color: var(--tx-3);
+  display: flex; align-items: center;
   /* 导航项一律 500：13px 下 500 已足够清楚，600 会让整栏显黑 */
   font-weight: 500;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -115,18 +44,13 @@ body.still *, body.still *::before, body.still *::after {
 }
 .sb-item:hover { background: var(--bg-hover); color: var(--tx-1); }
 /* 选中态：块面 + 青蓝图标 + 600 字重，三重标记 */
-.sb-item.on { background: var(--bg-2); color: var(--tx-1); font-weight: 600; }
 .sb-item .icon { color: var(--tx-4); }
 .sb-item.on .icon { color: var(--accent); }
 /* 计数角标：原来用 --bg-2 实底，而 --bg-2 与选中行的底色是同一个值 ——
    「记忆」被选中时角标整个消失，只剩两个数字。而且未选中时角标底色
    (#E2E8F0) 压在侧栏底 (#E4E9F0) 上只差 2/1/0，本来也几乎看不见。
    改成透明底 + 一道描边，两种状态下都立得住，也不与选中块面抢。 */
-.sb-item .badge {
-  margin-left: auto; font-family: var(--font-mono); font-size: 10px;
-  color: var(--tx-4); background: transparent;
-  border: 1px solid var(--line-2);
-  padding: 1px 5px; border-radius: var(--r-xs);
+.sb-item .badge { font-family: var(--font-mono);
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .sb-item.on .badge { color: var(--tx-3); border-color: var(--line-3); }
@@ -134,79 +58,33 @@ body.still *, body.still *::before, body.still *::after {
 /* 侧栏底部：只放设置入口。外观切换、存储状态、同步状态全部收进设置页，
    侧栏不再堆砌不承载操作的说明文字。 */
 .sb-foot {
-  margin-top: auto; padding: 8px 0 0;
-  border-top: 1px solid var(--line);
+  margin-top: auto;
 }
-.sb-set .icon { color: var(--tx-4); }
-.sb-set.on .icon { color: var(--accent); }
-
-/* —— 收起态 ————————————————————————————————————
-   收起后侧栏退化为 56px 图标条：只留品牌标记与四个图标。
-   不做滑出动画 —— 侧栏是导航骨架，切换要「立刻到位」，
-   动画会让用户以为还在加载。 */
 
 /* 收起开关住在侧栏品牌行，不在标题栏。
    原型里标题栏和侧栏是两块，真实 App 只保留原生标题栏（app-embed.css 把
    .mac-titlebar display:none 掉了）—— 开关放在标题栏里，真机就一个入口都没有。
    放在品牌行右侧也和 Xcode / Finder / Numbers 的位置一致。 */
 .sb-brand {
-  display: flex; align-items: center; gap: 8px;
-  height: 28px; padding: 0 4px 0 8px;
+  display: flex;
+  height: 28px;
   margin-bottom: 10px;
 }
 .sb-brand h1 {
   flex: 1; margin: 0;
   font-size: 14px; font-weight: 700;
-  color: var(--tx-1); letter-spacing: .005em;
+  color: var(--tx-1);
 }
-.sb-brand .sb-toggle { margin-left: auto; }
-
-.sb-toggle {
-  display: grid; place-items: center;
-  width: 24px; height: 24px; flex: none;
-  border-radius: var(--r-xs);
-  color: var(--tx-4);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
-  -webkit-app-region: no-drag;
-}
-.sb-toggle:hover { background: var(--bg-hover); color: var(--tx-1); }
-.sb-toggle .icon { width: 15px; height: 15px; }
 
 /* 产品标记：展开时在「只言」左侧，收起时替代文字。
    尺寸按 20px 设计 —— 大图缩到 20px 会糊，见 icon/mark-small.svg 的验证图。
    剪影是 fill 不是 stroke，且镂空是真透明，所以压任何底色都成立，
    取色只跟 --tx-1 就行，不需要按主题各给一份。 */
-.sb-mark {
-  display: grid; place-items: center;
-  width: 20px; height: 20px; flex: none;
-  color: var(--tx-1);
-}
 .mark-svg { width: 20px; height: 20px; display: block; fill: currentColor; stroke: none; }
-
-html.sb-collapsed .sidebar { width: var(--sidebar-mini); }
-html.sb-collapsed .sb-brand {
-  height: auto; padding: 0 0 14px; justify-content: center;
-}
-html.sb-collapsed .sb-brand h1 { display: none; }
-html.sb-collapsed .sb-nav { width: 100%; }
-html.sb-collapsed .sb-item {
-  justify-content: center; padding: 8px 0; gap: 0;
-}
-html.sb-collapsed .sb-item span:not(.badge) { display: none; }
-html.sb-collapsed .sb-item .badge { display: none; }
-html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
 
 /* 收起态：收起开关不渲染，展开入口就是品牌标记本身。
    56px 的图标条里摆两个控件太挤，而且「收起」这个动作已经没有意义 ——
    它已经收起了。唯一需要的操作是「展开」，那就把产品标记本身变成展开按钮。 */
-.sb-mark.sb-expand {
-  width: 28px; height: 28px;      /* 命中区比视觉大：小图标不好点 */
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background var(--dur) var(--ease);
-}
-.sb-mark.sb-expand .mark-svg { margin: 4px; }
-.sb-mark.sb-expand:hover { background: var(--bg-hover); }
 .sb-mark.sb-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* 内容区：唯一独立的一层。
@@ -218,7 +96,6 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
   flex: 1; min-width: 0;
   overflow-y: auto; overflow-x: hidden;
   position: relative;
-  background: var(--bg-0);
   border-left: 1px solid var(--line);
 }
 /* 顶部单色径向光晕：极低对比，只为让大面积纯色底不显得死板。
@@ -231,71 +108,23 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
   pointer-events: none; z-index: 0;
 }
 .content-scroll {
-  padding: 34px 40px 56px;
   min-height: 100%;
   position: relative; z-index: 1;
 }
-.content-inner { max-width: var(--measure); margin: 0 auto; }
-.content-inner.wide { max-width: 760px; }
-
-/* 滚动条样式已上移到 base.css，两套主题共用 */
-
-/* macOS 顶部工具条 */
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: var(--sp-5); }
-.toolbar .spacer { flex: 1; }
 
 /* ——————————————————————————————————————————————————
    iPhone
    —————————————————————————————————————————————————— */
 .iphone {
-  width: 390px; height: 844px; flex: none;
-  background: var(--bg-0);
-  border-radius: 46px;
-  box-shadow: 0 0 0 11px #16191D, 0 0 0 12px #2C333B, 0 32px 70px rgba(0,0,0,.6);
+  flex: none;
   overflow: hidden;
   display: flex; flex-direction: column;
   position: relative;
-  animation: fadeIn 220ms var(--ease) both;
-}
-
-.ios-statusbar {
-  height: 50px; flex: none; padding: 0 30px;
-  display: flex; align-items: flex-end; justify-content: space-between;
-  padding-bottom: 6px;
-  font-size: 13px; font-weight: 600; color: var(--tx-1);
-  font-variant-numeric: tabular-nums;
-  position: relative; z-index: 10;
-}
-.ios-statusbar .sb-r { display: flex; align-items: center; gap: 5px; color: var(--tx-3); }
-.ios-notch {
-  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-  width: 108px; height: 28px; background: #000; border-radius: var(--r-full);
-  z-index: 70;   /* 高于录音全屏浮层：全屏接管时刘海仍要留在机身上 */
 }
 
 .ios-content { flex: 1; min-height: 0; overflow-y: auto; position: relative; z-index: 1; }
-.ios-scroll { padding: 4px 18px 26px; min-height: 100%; position: relative; z-index: 1; }
+.ios-scroll { min-height: 100%; position: relative; z-index: 1; }
 .ios-scroll::-webkit-scrollbar { width: 0; }
-
-.ios-nav {
-  height: 48px; flex: none; padding: 0 8px;
-  display: flex; align-items: center; gap: 4px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-0);
-  position: relative; z-index: 10;
-}
-/* 导航标题：纯文字，不加图标。
-   试过在标题前放产品标记，15px 下两段弧线读不出来，像个残缺符号。
-   App 图标负责品牌识别，导航栏只负责说明「你在哪一页」——两者不该抢。 */
-.ios-nav-title {
-  font-size: 15px; font-weight: 600; color: var(--tx-1);
-  flex: 1; text-align: center;
-}
-.ios-nav-btn { padding: 6px 8px; color: var(--accent); font-size: 14px; min-width: 52px;
-               display: flex; align-items: center; }
-.ios-nav-btn.left { justify-content: flex-start; }
-.ios-nav-btn.right { justify-content: flex-end; }
-.ios-nav-btn button { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); }
 
 /* 标签栏高度 = 上内边距 + 标签最小高(44pt，HIG 触控下限) + 下内边距。
    下内边距从 24px 收到 14px：原先那 24px 是为了给假 home 指示条让位，
@@ -304,16 +133,12 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
 .ios-tabbar {
   flex: none;
   display: flex; align-items: stretch;
-  padding: 8px 2px 14px;
   border-top: 1px solid var(--line);
-  background: var(--bg-0);
   position: relative; z-index: 10;
 }
 .ios-tab {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 3px;
-  color: var(--tx-4);
-  font-size: 10.5px; line-height: 1.25; letter-spacing: .01em;
+  align-items: center; justify-content: center; line-height: 1.25; letter-spacing: .01em;
   /* HIG 最小可点区 44x44pt。原来只有 21(图标)+3(gap)+13.1(文字)=37.1pt，
      差 6.9pt —— 手指命中率不够。视觉尺寸不动，只把可点区垫到 44pt，
      标签栏从 67pt 变 74pt，安全区净高 781pt 内完全放得下 */
@@ -323,18 +148,11 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
   transition: color var(--dur) var(--ease);
 }
 .ios-tab .icon { width: 21px; height: 21px; flex: none; }
-.ios-tab.on { color: var(--accent); }
 
 .ios-home { height: 22px; flex: none; display: grid; place-items: center;
             background: var(--bg-0); position: relative; z-index: 10; }
 .ios-home i { width: 134px; height: 5px; border-radius: var(--r-full);
               background: var(--tx-2); opacity: .5; display: block; }
-
-/* 设置页品牌区的图标尺寸分平台。
-   iOS 用 60pt：这是 iOS 应用图标的原生尺寸（状态栏应用图标同尺寸），
-   栅格化后最干净；macOS 侧栏/设置区用 44px，够读又不会压过产品名。 */
-.iphone .brand-icon .mark-svg { width: 60px; height: 60px; }
-.iphone .brand-row  { padding: 4px 0 22px; }
 
 /* iOS 触控尺寸：HIG 要求可点区 ≥44x44pt。
    macOS 端标准控件实测是 24pt（AppKit intrinsic size），
@@ -342,47 +160,6 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
    但同一套尺寸到 iPhone 上就低于手指门槛了 —— 只在 iOS 端垫到 44pt，
    视觉大小不变，只补足命中区域。 */
 .iphone .btn      { min-height: 44px; }
-.iphone .btn-lg   { height: 44px; }
-.iphone .btn-stop { width: 44px; height: 44px; }
-.iphone .search-field { height: 44px; }
-
-/* iOS：没有侧栏余量做时间轨，改为卡面单列 —— 这是真实的平台差异，不是偷懒。
-   浅色下卡面比底暗，所以这层「浮起来」的观感自然成立，不需要额外阴影 */
-.ios-mem { padding-bottom: 4px; }
-.ios-mem .mem { display: block; padding-bottom: 10px; }
-.ios-mem .mem::before { display: none; }
-.ios-mem .mem-rail {
-  width: auto;
-  display: flex; flex-direction: row; align-items: center; gap: 6px;
-  padding: 0 0 5px;
-}
-.ios-mem .mem-time { font-size: var(--t-xs); }
-.ios-mem .mem-card {
-  padding: 12px 13px;
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  box-shadow: inset 0 1px 0 var(--edge-hi);
-}
-.ios-mem .mem-card:hover { background: var(--bg-1); }
-.ios-mem .mem-raw { font-size: var(--t-body); }
-.ios-mem .day-head { margin-top: var(--sp-6); }
-
-.ios-content-wrap { max-width: 100%; }
-.ios-content-wrap .capture { max-width: 100%; }
-
-/* iOS 列表：系统风格分组列表 */
-.ios-section { margin-bottom: var(--sp-6); }
-.ios-sheet {
-  background: var(--bg-1); border: 1px solid var(--line);
-  border-radius: var(--r-md); overflow: hidden;
-  box-shadow: inset 0 1px 0 var(--edge-hi);
-}
-.ios-sheet .row { padding: 12px 13px; }
-
-/* iOS 大标题 */
-.ios-large { font-size: 26px; line-height: 1.25; margin: 8px 0 4px; font-weight: 700;
-             letter-spacing: -.02em; color: var(--tx-1); }
 
 /* ==========================================================================
    响应式断点
@@ -392,7 +169,6 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
    —— <620 手机浏览器直接打开：窗口铺满
    ========================================================================== */
 @media (max-width: 1280px) {
-  .mac-window { width: 100%; height: 780px; }
   .content-scroll { padding: 30px 28px 48px; }
 }
 
@@ -402,7 +178,7 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
   /* 窄窗下侧栏恒为 60px，等同于永久收起态：品牌名和收起开关都放不下，
      只留猫头鹰。这里以前只缩了字号没隐藏，「只言」会挤在 60px 里。 */
   .sb-brand { padding: 0 0 12px; justify-content: center; }
-  .sb-brand h1, .sb-brand .sb-toggle { display: none; }
+  .sb-brand h1 { display: none; }
   /* 窄窗收起文字，但设置入口必须保留 —— 否则用户找不到设置 */
   .sb-item span:not(.badge) { display: none; }
   .sb-foot { padding-top: 8px; }
@@ -410,50 +186,10 @@ html.sb-collapsed .sb-foot { width: 100%; padding-top: 8px; }
   .sb-item .badge { display: none; }
 
   .content-scroll { padding: 24px 20px 44px; }
-  .mem { gap: var(--sp-3); }
-  .mem::before { left: calc(var(--rail) - 11px); }
 }
 
 @media (max-width: 620px) {
-  /* 手机浏览器直接打开原型时：窗口去圆角、占满视口 */
-  .mac-window { width: 100%; height: 100vh; border-radius: 0; box-shadow: none; }
-  .proto-stage { padding: 52px 0 0; }
-  .mac-titlebar { display: none; }
-  .proto-bar { flex-wrap: wrap; height: auto; padding: 5px 10px; }
-  .proto-hint { display: none; }
   .content-scroll { padding: 20px 16px 40px; }
   .capture { padding-top: 0; }
-  .page-title { font-size: 18px; }
   .detail-raw { font-size: 16px; }
-  .proto-switch { overflow-x: auto; max-width: 100%; }
-  /* iPhone 外壳在窄视口下等比收窄，但保留机身厚度，去掉外阴影 */
-  .iphone { width: 100%; max-width: 390px; height: 100vh; border-radius: 40px;
-            box-shadow: 0 0 0 9px #16191D, 0 0 0 10px #2C333B; }
-  /* 时间轨在窄屏没有余量，转为卡面单列 */
-  .mem { display: block; gap: 0; }
-  .mem::before { display: none; }
-  .mem-rail {
-    width: auto; flex-direction: row; align-items: center; gap: 6px;
-    padding: 0 0 5px;
-  }
-  .mem-card {
-    padding: 12px 13px;
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    box-shadow: inset 0 1px 0 var(--edge-hi);
-  }
-  .row-seg { max-width: 190px; }
-  .flow { flex-direction: column; gap: var(--sp-3); }
-  .flow-arrow { width: 100%; flex-direction: column-reverse; gap: 5px; }
-  .flow-arrow .line { width: 1px; height: 18px; }
-  .flow-arrow .line::after {
-    right: -2.5px; top: auto; bottom: 0;
-    border-left: 3px solid transparent; border-right: 3px solid transparent;
-    border-top: 5px solid var(--line-2); border-bottom: none;
-  }
 }
-
-/* 浅色主题不靠 prefers-color-scheme 自动切换：
-   切换权归用户（跟随系统 / 浅色 / 深色），由 <html data-theme> 驱动。
-   这样截图和演示才能确定性复现某一套主题。 */
