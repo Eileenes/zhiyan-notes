@@ -97,7 +97,9 @@ fn apple_bridge_without_consent_sync_is_refused() {
 fn native_bridge_mirrors_ai_consent_into_core() {
     // Static guard (Swift is not compiled on Linux CI): prefsSet(aiConsent)
     // and launch must both forward consent to the core via the C ABI.
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../build/NativeBridge.swift")).unwrap();
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../build/NativeBridge.swift")).unwrap()
+        // Windows checkouts may use CRLF.
+        .replace("\r\n", "\n");
     let prefs = &src[src.find("case \"prefsSet\":").unwrap()..];
     let prefs = &prefs[..prefs.find("reply(seq, true, \"ok\")").unwrap()];
     let sync = prefs.find("syncConsent").expect("prefsSet must call syncConsent");
