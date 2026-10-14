@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import secrets
 import threading
 import time
@@ -102,6 +103,12 @@ class Credentials(BaseModel):
     device_id: str = Field(min_length=1, max_length=128)
     device_name: str = Field(default="只言设备", max_length=100)
     invite_code: str = Field(default="", max_length=200)
+
+
+class AccountDeletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=128)
+    confirm: str = Field(max_length=50)
 
 
 class Note(BaseModel):
@@ -449,6 +456,40 @@ def create_app(
                 )
             )
         return {"ok": True}
+
+    @app.delete("/v1/account")
+    def delete_account(
+        body: AccountDeletion, authorization: str | None = Header(default=None)
+    ):
+        """Permanently delete the caller's account and every server-side copy.
+
+        Requires the current password and the username typed again, so a stolen
+        bearer token alone cannot wipe an account.
+        """
+        session = identity(authorization)
+        uid = session["user_id"]
+        limit(("delete-account", uid), 5, 300)
+        with engine.connect() as conn:
+            user = conn.execute(select(users).where(users.c.id == uid)).mappings().one()
+        if body.confirm.lower() != user["username"]:
+            raise HTTPException(422, "请输入当前用户名以确认删除")
+        try:
+            hasher.verify(user["password_hash"], body.password)
+        except (VerifyMismatchError, InvalidHashError):
+            raise HTTPException(403, "密码不正确")
+        with lock, engine.begin() as conn:
+            conn.execute(
+                select(users.c.id).where(users.c.id == uid).with_for_update()
+            ).one()
+            for table in (receipts, changes, notes, attachments, sessions):
+                conn.execute(delete(table).where(table.c.user_id == uid))
+            conn.execute(delete(users).where(users.c.id == uid))
+        # Files go after the commit: a crash leaves orphaned files (no owner row,
+        # unreachable) rather than rows pointing at missing audio.
+        folder = storage / uid
+        if folder.resolve().parent == storage.resolve():
+            shutil.rmtree(folder, ignore_errors=True)
+        return {"ok": True, "deleted": True}
 
     @app.post("/v1/sync/push")
     def push(body: Push, authorization: str | None = Header(default=None)):

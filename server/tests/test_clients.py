@@ -319,3 +319,55 @@ def test_large_unicode_notes_split_sync_batches(tmp_path, monkeypatch):
         assert a.sync()["pending"] == 0
         assert b.sync()["pending"] == 0
         assert b.call("stats")["total"] == 4
+
+
+def test_rust_client_account_deletion_clears_binding(tmp_path, monkeypatch):
+    monkeypatch.setenv("REGISTRATION_MODE", "open")
+    with serve(
+        create_app(
+            "sqlite:///" + str(tmp_path / "server.db"), tmp_path / "audio", False
+        )
+    ) as url:
+        a = Client(tmp_path / "a")
+        b = Client(tmp_path / "b")
+        a.login(url, register=True)
+        b.login(url)
+        a.call("save", id="keep", text="本机保留")
+        media = a.call("mediaWrite", format="wav", data=base64.b64encode(b"RIFFx").decode())
+        a.call("save", id="rec", text="", source="voice", audio=media["path"], dur=1000)
+        assert a.sync()["pending"] == 0
+        assert list((tmp_path / "audio").iterdir())
+
+        def fails(client, op, **args):
+            proc = subprocess.run(
+                [str(BIN), str(client.path)],
+                input=json.dumps(dict(op=op, **args)) + "\n",
+                text=True, capture_output=True, timeout=20, check=True,
+            )
+            result = json.loads(proc.stdout)
+            assert not result["ok"]
+            return result["error"]
+
+        # Wrong confirmation is refused locally; wrong password by the server.
+        fails(a, "accountDelete", token=a.token, password="fixture-password-123", confirm="bob")
+        err = fails(a, "accountDelete", token=a.token, password="not-the-password", confirm="alice")
+        assert "not-the-password" not in err
+        assert a.call("syncStatus")["account"]["username"] == "alice"
+
+        status = a.call("accountDelete", token=a.token, password="fixture-password-123", confirm="alice")
+        assert status["account"] is None and status["enabled"] is False
+        assert status["pending"] == 0 and status["conflicts"] == 0
+        assert not any((tmp_path / "audio").iterdir())
+        # Local notes survive; the recording will be re-uploaded on a new binding.
+        assert a.call("get", id="keep")["raw"] == "本机保留"
+        assert a.call("get", id="rec")["attachment_id"] is None
+        # Old tokens (this and the other device) are rejected.
+        assert "401" in fails(b, "syncRun", token=b.token)
+        with sqlite3.connect(tmp_path / "server.db") as db:
+            assert db.execute("select count(*) from notes").fetchone()[0] == 0
+            assert db.execute("select count(*) from sessions").fetchone()[0] == 0
+        # The library can be bound to a new account afterwards.
+        a.login(url, "carol", register=True)
+        assert a.sync()["pending"] == 0
+        with sqlite3.connect(tmp_path / "server.db") as db:
+            assert db.execute("select count(*) from notes").fetchone()[0] == 2

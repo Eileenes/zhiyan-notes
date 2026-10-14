@@ -11,6 +11,7 @@ const Services = {
   providerMessage: "",
   syncMessage: "",
   accountForm: { url: "", username: "", password: "", invite_code: "" },
+  deleteAccount: { step: 0, confirm: "", password: "" },
   conflicts: [],
   call(op, value = {}) {
     return ZY.call(op, value);
@@ -308,6 +309,49 @@ const Services = {
       toast(error.message, "error");
     }
   },
+  // Two explicit steps: credentials + typed username, then a final confirmation.
+  deleteAccountStep(action) {
+    const d = this.deleteAccount,
+      a = this.sync.account;
+    if (action === "delete-account-start") d.step = 1;
+    if (action === "delete-account-cancel")
+      Object.assign(d, { step: 0, confirm: "", password: "" });
+    if (action === "delete-account-next") {
+      if (!a || d.confirm.trim().toLowerCase() !== a.username)
+        return toast("用户名不一致", "error");
+      if (!d.password) return toast("请输入当前密码", "error");
+      d.step = 2;
+    }
+    render();
+  },
+  async deleteAccountConfirm() {
+    const d = this.deleteAccount;
+    if (this.working || d.step !== 2) return;
+    this.working = true;
+    render();
+    try {
+      const key = this.tokenKey();
+      const token = await this.call("secretGet", { key });
+      this.sync = await this.call("accountDelete", {
+        token,
+        password: d.password,
+        confirm: d.confirm.trim().toLowerCase(),
+      });
+      await this.call("secretDelete", { key });
+      Object.assign(d, { step: 0, confirm: "", password: "" });
+      this.conflicts = [];
+      this.accountForm.username = "";
+      this.syncMessage = "账号及云端数据已删除，本机记录仍保留。";
+      await this.refresh();
+    } catch (error) {
+      d.step = 1;
+      d.password = "";
+      this.syncMessage = "未删除：" + error.message;
+    } finally {
+      this.working = false;
+      render();
+    }
+  },
   async download(id) {
     const token = await this.call("secretGet", { key: this.tokenKey() });
     await this.call("audioDownload", { id, token });
@@ -446,6 +490,8 @@ document.addEventListener("input", (e) => {
   if (target.dataset.providerField && Services.providerDraft)
     Services.providerDraft[target.dataset.providerField] = target.value;
   if (target.id === "provider-key") Services.providerKey = target.value;
+  if (target.dataset.deleteField)
+    Services.deleteAccount[target.dataset.deleteField] = target.value;
   if (target.dataset.accountField)
     Services.accountForm[target.dataset.accountField] = target.value;
 });
@@ -474,6 +520,9 @@ document.addEventListener("click", async (e) => {
     Services.authenticate(action === "register");
   if (action === "sync") Services.runSync();
   if (action === "logout") Services.logout();
+  if (action.startsWith("delete-account-") && action !== "delete-account-confirm")
+    Services.deleteAccountStep(action);
+  if (action === "delete-account-confirm") Services.deleteAccountConfirm();
   if (action === "summary" || action === "transcription")
     Services.enqueue(action, id);
   if (action === "retry-job") {
