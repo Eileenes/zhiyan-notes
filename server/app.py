@@ -13,6 +13,7 @@ import secrets
 import threading
 import time
 import uuid
+import warnings
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 
@@ -150,6 +151,36 @@ def parse_trusted_proxies(value):
     return tuple(networks)
 
 
+def validate_caddy_ip(caddy_ip, subnet=None):
+    """CADDY_IP (compose.public.yaml) must be one host address, not a CIDR or
+    list: it becomes TRUSTED_PROXIES, and a range there would trust forged
+    X-Forwarded-For from every container on it. Returns the parsed address."""
+    value = (caddy_ip or "").strip()
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        raise ValueError(f"CADDY_IP must be a single IP address, got {caddy_ip!r}")
+    if subnet:
+        net = ipaddress.ip_network(subnet.strip(), strict=False)
+        if ip not in net:
+            raise ValueError(f"CADDY_IP {ip} is not inside PROXY_SUBNET {net}")
+        if ip in (net.network_address, net.broadcast_address) or ip == next(net.hosts(), None):
+            raise ValueError(f"CADDY_IP {ip} is the network, broadcast or gateway address of {net}")
+    return ip
+
+
+def proxy_warnings(trusted):
+    """Human-readable warnings for dangerous TRUSTED_PROXIES values."""
+    warnings = []
+    for net in trusted:
+        if net.prefixlen == 0:
+            warnings.append(
+                f"TRUSTED_PROXIES contains {net}: every peer is trusted, so any client "
+                "can forge X-Forwarded-For and bypass per-IP rate limits"
+            )
+    return warnings
+
+
 def _ip(value):
     try:
         return ipaddress.ip_address(value.strip())
@@ -214,6 +245,11 @@ def create_app(
         if trusted_proxies is None
         else trusted_proxies
     )
+    for warning in proxy_warnings(trusted):
+        warnings.warn(warning, RuntimeWarning, stacklevel=2)
+        print("WARNING:", warning, flush=True)
+    if os.getenv("CADDY_IP"):
+        validate_caddy_ip(os.getenv("CADDY_IP"), os.getenv("PROXY_SUBNET") or None)
     max_file = int(os.getenv("MAX_AUDIO_BYTES", str(100 * 1024 * 1024)))
     user_quota = int(os.getenv("USER_STORAGE_BYTES", str(1024 * 1024 * 1024)))
 

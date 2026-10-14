@@ -23,6 +23,10 @@ services:
       # Deliberately overrides any TRUSTED_PROXIES in .env: with the bundled
       # Caddy the only trusted hop is Caddy itself.
       TRUSTED_PROXIES: ${CADDY_IP:-172.31.87.10}
+      # Passed through so the API refuses to start if CADDY_IP is not a single
+      # host address inside PROXY_SUBNET (see validate_caddy_ip).
+      CADDY_IP: ${CADDY_IP:-172.31.87.10}
+      PROXY_SUBNET: ${PROXY_SUBNET:-172.31.87.0/24}
 networks:
   default:
     ipam:

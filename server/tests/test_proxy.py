@@ -2,7 +2,13 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from server.app import client_ip, create_app, parse_trusted_proxies
+from server.app import (
+    client_ip,
+    create_app,
+    parse_trusted_proxies,
+    proxy_warnings,
+    validate_caddy_ip,
+)
 
 PROXY = "172.31.87.10"
 TRUSTED = parse_trusted_proxies(PROXY + ",10.0.0.0/8")
@@ -66,3 +72,34 @@ def test_untrusted_default_ignores_header(tmp_path, monkeypatch):
 def test_invalid_trusted_proxy_config_fails_fast(tmp_path):
     with pytest.raises(ValueError):
         create_app("sqlite:///" + str(tmp_path / "s.db"), tmp_path / "a", True, "nope")
+
+
+@pytest.mark.parametrize("bad", ["172.31.87.0/24", "172.31.87.10/32", "172.31.87.10,10.0.0.1", "caddy", "", " "])
+def test_caddy_ip_must_be_single_address(bad):
+    with pytest.raises(ValueError):
+        validate_caddy_ip(bad)
+
+
+def test_caddy_ip_inside_subnet_and_not_reserved():
+    assert str(validate_caddy_ip(" 172.31.87.10 ", "172.31.87.0/24")) == "172.31.87.10"
+    assert str(validate_caddy_ip("fd00::10", "fd00::/64")) == "fd00::10"
+    for bad in ("10.0.0.10", "172.31.87.0", "172.31.87.1", "172.31.87.255"):
+        with pytest.raises(ValueError):
+            validate_caddy_ip(bad, "172.31.87.0/24")
+
+
+def test_app_refuses_bad_caddy_ip(monkeypatch, tmp_path):
+    monkeypatch.setenv("CADDY_IP", "172.31.87.0/24")
+    with pytest.raises(ValueError, match="single IP"):
+        create_app(f"sqlite:///{tmp_path}/t.db", tmp_path / "a")
+
+
+@pytest.mark.parametrize("value", ["0.0.0.0/0", "::/0", "10.0.0.1, 0.0.0.0/0"])
+def test_warns_when_everyone_is_trusted(value, tmp_path):
+    assert proxy_warnings(parse_trusted_proxies(value))
+    with pytest.warns(RuntimeWarning, match="every peer is trusted"):
+        create_app(f"sqlite:///{tmp_path}/t.db", tmp_path / "a", trusted_proxies=value)
+
+
+def test_no_warning_for_specific_proxies():
+    assert proxy_warnings(parse_trusted_proxies("172.31.87.10,10.0.0.0/8,fd00::/8")) == []

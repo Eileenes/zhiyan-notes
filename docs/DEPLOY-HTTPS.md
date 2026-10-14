@@ -80,7 +80,8 @@ docker compose -f compose.yaml -f compose.public.yaml up -d
 注册（每 IP 5 次/小时）和登录（每 IP 30 次/5 分钟）的限流按客户端 IP 计数。API 只在 **TCP 对端属于 `TRUSTED_PROXIES`** 时才读取 `X-Forwarded-For`，并从右往左取第一个不可信地址；否则一律使用 TCP 对端地址。因此直连 API 的人伪造 `X-Forwarded-For` 不能换桶绕过限流（见 `server/tests/test_proxy.py`）。
 
 - **随附 Caddy（推荐）**：`compose.public.yaml` 建一个私有网络（`PROXY_SUBNET`，默认 `172.31.87.0/24`），给 Caddy 固定地址 `CADDY_IP`（默认 `172.31.87.10`），并把 API 的 `TRUSTED_PROXIES` **强制设为 `CADDY_IP`**——此时 `.env` 里的 `TRUSTED_PROXIES` 会被 compose 覆盖、不生效（这是有意的：只信 Caddy 一跳）。Caddyfile 用 `header_up X-Forwarded-For {remote_host}` **覆盖**客户端传来的值。
-  - **子网冲突**：若 `docker compose up` 报 `Pool overlaps with other one on this address space`，或该网段与服务器/VPN 路由重叠（`ip route` 查看），在 `.env` 中同时改 `PROXY_SUBNET` 与 `CADDY_IP`（例如 `10.213.87.0/24` 与 `10.213.87.10`），然后 `docker compose -f compose.yaml -f compose.public.yaml down && ... up -d`（不加 `-v`，数据卷保留）。`CADDY_IP` 必须在 `PROXY_SUBNET` 内且不是 `.1`（网关）。
+  - **子网冲突**：若 `docker compose up` 报 `Pool overlaps with other one on this address space`，或该网段与服务器/VPN 路由重叠（`ip route` 查看），在 `.env` 中同时改 `PROXY_SUBNET` 与 `CADDY_IP`（例如 `10.213.87.0/24` 与 `10.213.87.10`），然后 `docker compose -f compose.yaml -f compose.public.yaml down && ... up -d`（不加 `-v`，数据卷保留）。`CADDY_IP` 必须是**单个 IP**（不能是网段或列表），在 `PROXY_SUBNET` 内，且不是网络/广播/网关（`.1`）地址——否则 API 启动即报错退出。
+  - **`TRUSTED_PROXIES` 含 `0.0.0.0/0` 或 `::/0`** 时 API 启动会打印 `WARNING`：这等于信任所有来源伪造的 X-Forwarded-For，按 IP 限流形同虚设。
 - **Caddy 前面还有 CDN / 负载均衡**：在 Caddyfile 全局选项里配置 `servers { trusted_proxies static <CDN 网段> }` 并改为 `header_up X-Forwarded-For {client_ip}`；只能填 CDN 官方公布的网段。
 - **自建 Nginx 等反代到 `127.0.0.1:8787`**：Docker 会把来源映射为网桥网关地址（通常 `172.17.0.1` 或 compose 网络的 `.1`）。把这个地址填到 `.env` 的 `TRUSTED_PROXIES`，并在 Nginx 中用 `proxy_set_header X-Forwarded-For $remote_addr;`（覆盖，不要用 `$proxy_add_x_forwarded_for`）。
 - uvicorn 已用 `--no-proxy-headers` 启动，代理头只由应用按上述规则处理。
