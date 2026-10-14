@@ -29,7 +29,31 @@ test("UI templates contain no inline event handlers or javascript: URLs", () => 
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith(".js") || name.includes("test") || name.startsWith(".")) continue;
     const src = fs.readFileSync(path.join(dir, name), "utf8");
-    assert.doesNotMatch(src, /<[a-z][^<>]*\son(?:click|submit|error|load|input|change)=/i, name);
+    assert.doesNotMatch(src, /<[a-z][^<>]*\son[a-z]+\s*=/i, name);
     assert.doesNotMatch(src, /javascript:/i, name);
   }
+});
+
+test("Apple shell index gets a CSP meta without inline scripts", () => {
+  const { execFileSync } = require("node:child_process");
+  const os = require("node:os");
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "csp-")), "index.html");
+  const sh = fs.readFileSync(path.join(root, "build/build.sh"), "utf8");
+  const py = sh.match(/<<'PY'\n([\s\S]*?)\nPY/)[1];
+  execFileSync("python3", ["-", path.join(dir, "index.html"), out], { input: py });
+  const html = fs.readFileSync(out, "utf8");
+  const m = html.match(/<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
+  assert.ok(m, "CSP meta must be the first element in <head>");
+  const script = m[1].split(";").map((d) => d.trim()).find((d) => d.startsWith("script-src"));
+  assert.doesNotMatch(script, /unsafe-inline|unsafe-eval|\*/);
+  assert.match(m[1], /object-src 'none'/);
+  assert.match(m[1], /base-uri 'none'/);
+});
+
+test("handler regex catches every on* attribute", () => {
+  const re = /<[a-z][^<>]*\son[a-z]+\s*=/i;
+  for (const a of ["onclick", "onmouseover", "onfocus", "onpointerdown", "onanimationend", "ONKEYUP"])
+    assert.match(`<div ${a}="x()">`, re, a);
+  assert.match('<img src=x onerror = "y">', re);
+  assert.doesNotMatch('<div data-on="x" class="button">', re);
 });
