@@ -4,7 +4,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "zhiyan-ui-"));
-const output = path.resolve(__dirname, "../verify/garden");
+// GARDEN_INDEX / GARDEN_OUT let tools/visual-regression.sh render another
+// build (e.g. web-dist or a base revision) with the same interaction script.
+const output = path.resolve(process.env.GARDEN_OUT || path.join(__dirname, "../verify/garden"));
+const indexFile = path.resolve(process.env.GARDEN_INDEX || path.join(__dirname, "index.html"));
 fs.mkdirSync(output, { recursive: true });
 const chrome = spawn(
   process.env.CHROME_PATH ||
@@ -97,7 +100,7 @@ let errors = [];
   await send("Page.navigate", {
     url:
       "file://" +
-      path.resolve(__dirname, "index.html") +
+      indexFile +
       "?still=1&theme=light",
   });
   await wait('typeof state!=="undefined" && state.loaded');

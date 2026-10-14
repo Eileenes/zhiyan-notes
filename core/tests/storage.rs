@@ -130,3 +130,11 @@ fn ai_jobs_require_current_consent_including_retries() {
     assert!(core.call(json!({"op":"aiRun","id":queued,"key":"k"})).unwrap_err().to_string().contains("尚未同意"));
     assert!(upstream.accept().is_err(), "no request may reach the provider");
 }
+
+#[test]
+fn unused_sidebar_preference_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut core = Core::open(dir.path().join("notes.db")).unwrap();
+    assert!(core.call(json!({"op":"prefsSet","key":"sidebar","value":"collapsed"})).is_err());
+    assert!(core.call(json!({"op":"prefsSet","key":"theme","value":"dark"})).is_ok());
+}

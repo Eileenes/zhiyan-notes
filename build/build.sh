@@ -81,6 +81,8 @@ else:
         sys.stderr.write('ERROR: index.html 里找不到 platform.css 锚点\n')
         sys.exit(1)
     s = s.replace(anchor, anchor + tag)
+# preview.css 只给浏览器原型用（控制条 / 窗口外框 / 手机机身），App 不加载
+s = s.replace('<link rel="stylesheet" href="preview.css">\n', '')
 # Apple shells load index.html from file://, so there is no response header to
 # carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
 # (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
@@ -132,12 +134,21 @@ compile() {
 # Web 资源：拷完校验，不一致就炸
 # ---------------------------------------------------------------------------
 copy_web() {
-  local dest="$1"
+  local dest="$1" css_src="prototype"
   mkdir -p "$dest"
+  # CSS 走 build-web（PurgeCSS + 压缩，≤55KB 预算）；没有 node 依赖时退回源文件
+  if command -v node >/dev/null && [ -d node_modules/purgecss ]; then
+    node tools/build-web.js >/dev/null || die "build-web 失败（CSS 预算或压缩出错）"
+    css_src="web-dist"
+  else
+    say "未安装 node 依赖（npm ci），App 内 CSS 使用未压缩源文件"
+  fi
   for f in "${WEB_FILES[@]}"; do
-    cp "prototype/$f" "$dest/$f"
+    local src="prototype/$f"
+    [[ "$f" == *.css ]] && src="$css_src/$f"
+    cp "$src" "$dest/$f"
     local a b
-    a=$(shasum -a 256 "prototype/$f" | cut -d' ' -f1)
+    a=$(shasum -a 256 "$src" | cut -d' ' -f1)
     b=$(shasum -a 256 "$dest/$f"   | cut -d' ' -f1)
     [ "$a" = "$b" ] || die "Web 资源拷坏了：$f（$a != $b）"
   done
