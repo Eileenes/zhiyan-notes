@@ -1,0 +1,75 @@
+/* ==========================================================================
+   原型预览外框 —— 只在 prototype/index.html（浏览器预览、截图）中加载。
+   build-web 与 App 壳不打包本文件：原型控制条、舞台、macOS 窗口外框、
+   iPhone 机身都属于演示，不属于产品。产品结构样式留在 platform.css。
+   ========================================================================== */
+
+/* ——————————————————————————————————————————————————
+   原型控制条：明确不属于产品设计，避免和 UI 混淆
+   —————————————————————————————————————————————————— */
+.proto-bar {
+  position: fixed; top: 0; left: 0; right: 0; height: 38px; z-index: 999;
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  background: var(--bar-bg); color: var(--tx-3);
+  border-bottom: 1px solid var(--bar-line);
+  font-family: var(--font-sans); font-size: 12px;
+}
+.proto-bar .pb-title { font-weight: 600; color: var(--tx-1); letter-spacing: .02em; }
+.proto-bar .pb-sep { width: 1px; height: 16px; background: var(--bar-line); }
+.proto-switch {
+  display: flex; gap: 1px; background: var(--bg-1);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px;
+}
+.proto-switch button {
+  padding: 3px 10px; border-radius: 4px; color: var(--tx-3);
+  font-size: 11.5px; transition: all var(--dur) var(--ease); white-space: nowrap;
+}
+.proto-switch button:hover { color: var(--tx-1); background: var(--bg-2); }
+.proto-switch button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.proto-hint { margin-left: auto; color: var(--tx-4); font-size: 11px; }
+
+/* 原型条在窄视口必须自己收窄，否则换行会把下面的设备外壳顶出画面 */
+@media (max-width: 900px) {
+  .proto-bar .pb-desc { display: none; }
+  .proto-bar .pb-sep:last-of-type { display: none; }
+}
+
+.proto-stage {
+  padding: 66px 32px 48px; min-height: 100vh;
+  display: flex; justify-content: center; align-items: flex-start;
+  background: var(--stage-bg);
+}
+
+/* macOS 窗口外框 */
+.mac-window {
+  width: 1180px; height: 812px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--win-ring), var(--shadow-win);
+}
+
+/* iPhone 机身 */
+.iphone {
+  width: 390px; height: 844px;
+  border-radius: 46px;
+  box-shadow: 0 0 0 11px #16191D, 0 0 0 12px #2C333B, 0 32px 70px rgba(0,0,0,.6);
+}
+
+@media (max-width: 1280px) {
+  .mac-window { width: 100%; height: 780px; }
+}
+
+@media (max-width: 620px) {
+  /* 手机浏览器直接打开原型时：窗口去圆角、占满视口 */
+  .mac-window { width: 100%; height: 100vh; border-radius: 0; box-shadow: none; }
+  .proto-stage { padding: 52px 0 0; }
+  .proto-bar { flex-wrap: wrap; height: auto; padding: 5px 10px; }
+  .proto-hint { display: none; }
+  .proto-switch { overflow-x: auto; max-width: 100%; }
+  /* iPhone 外壳在窄视口下等比收窄，但保留机身厚度，去掉外阴影 */
+  .iphone { width: 100%; max-width: 390px; height: 100vh; border-radius: 40px;
+            box-shadow: 0 0 0 9px #16191D, 0 0 0 10px #2C333B; }
+}
+
+@media (max-width: 700px) {
+  .proto-bar .proto-hint { display: none; }
+}

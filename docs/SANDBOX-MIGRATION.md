@@ -10,7 +10,7 @@
 |---|---|
 | 数据库 | `~/Library/Application Support/只言/notes.db`（+ `-wal`、`-shm`） |
 | 录音等附件 | `~/Library/Application Support/只言/media/` |
-| 界面偏好（草稿、主题、侧栏、录音草稿、引导、隐私同意 `aiConsent`） | `~/Library/Application Support/只言/preferences.json`（与 `notes.db` 同目录，由 `build/NativeBridge.swift` 直接读写；随目录一起迁移）。PR #4 起 `aiConsent` 另外镜像写入数据库 `app_meta.preferences`，启动时从 preferences.json 重新同步 |
+| 界面偏好（草稿、主题、录音草稿、引导、隐私同意 `aiConsent`） | `~/Library/Application Support/只言/preferences.json`（与 `notes.db` 同目录，由 `build/NativeBridge.swift` 直接读写；随目录一起迁移）。PR #4 起 `aiConsent` 另外镜像写入数据库 `app_meta.preferences`，启动时从 preferences.json 重新同步 |
 | API Key、同步令牌、对外接口密钥 | 登录钥匙串，service 前缀 `com.duketao.zhiyan.credentials.` |
 
 开启 App Sandbox 后，`FileManager.urls(for: .applicationSupportDirectory)` 返回容器内路径

@@ -383,7 +383,11 @@ fn memory_qa_uses_configured_provider_and_cites_real_context() {
             write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
         }
     });
-    f.core.call(json!({"op":"gatewayStart","config":{"port":f.port},"key":KEY,"provider":{"id":"mock","name":"Mock provider","protocol":"openai","model":"fixture","baseUrl":format!("http://127.0.0.1:{port}/v1")},"provider_key":"upstream-test-key"})).unwrap();
+    let provider = json!({"id":"mock","name":"Mock provider","protocol":"openai","model":"fixture","baseUrl":format!("http://127.0.0.1:{port}/v1")});
+    f.core.call(json!({"op":"providersSave","providers":[provider.clone()]})).unwrap();
+    let consent = json!({ format!("mock|http://127.0.0.1:{port}"): 1 }).to_string();
+    f.core.call(json!({"op":"prefsSet","key":"aiConsent","value":consent})).unwrap();
+    f.core.call(json!({"op":"gatewayStart","config":{"port":f.port},"key":KEY,"provider":provider,"provider_key":"upstream-test-key"})).unwrap();
     let r:Value=f.client.post(format!("{}/v1/chat/completions",f.base)).bearer_auth(KEY).json(&json!({"model":"zhiyan-memory","messages":[{"role":"user","content":"我在上海记过什么咖啡店？"}]})).send().unwrap().json().unwrap();
     assert_eq!(
         r["choices"][0]["message"]["content"],
@@ -396,6 +400,29 @@ fn memory_qa_uses_configured_provider_and_cites_real_context() {
         .to_string()
         .contains("upstream-test-key"));
     thread.join().unwrap();
+    // Per-request checks: no restart needed for these to take effect, and
+    // the mock (which only accepts two connections) is never contacted again.
+    let ask = |f: &Fixture| {
+        f.client.post(format!("{}/v1/chat/completions",f.base)).bearer_auth(KEY)
+            .json(&json!({"model":"zhiyan-memory","messages":[{"role":"user","content":"咖啡店？"}]}))
+            .send().unwrap().status().as_u16()
+    };
+    f.core.call(json!({"op":"prefsSet","key":"aiConsent","value":"{}"})).unwrap();
+    assert_eq!(ask(&f), 403, "revoked consent blocks the running gateway");
+    f.core.call(json!({"op":"prefsSet","key":"aiConsent","value":consent})).unwrap();
+    let mut moved = provider.clone();
+    moved["baseUrl"] = json!("https://elsewhere.example/v1");
+    f.core.call(json!({"op":"providersSave","providers":[moved]})).unwrap();
+    assert_eq!(ask(&f), 409, "provider address change blocks the running gateway");
+    let mut off = provider.clone();
+    off["enabled"] = json!(false);
+    f.core.call(json!({"op":"providersSave","providers":[off]})).unwrap();
+    assert_eq!(ask(&f), 409, "disabled provider blocks the running gateway");
+    // Search-only model never sends anything upstream and stays available.
+    let r = f.client.post(format!("{}/v1/chat/completions",f.base)).bearer_auth(KEY)
+        .json(&json!({"model":"zhiyan-memory-search","messages":[{"role":"user","content":"咖啡"}]}))
+        .send().unwrap();
+    assert_eq!(r.status().as_u16(), 200);
 }
 
 #[test]

@@ -44,6 +44,7 @@ targetTemplates:
       - path: ../build/Audio.swift
       - path: ../build/Services.swift
       - path: ../build/NativeBridge.swift
+      - path: ../build/WebPolicy.swift      # CSP parsing + navigation policy used by shell.swift (#3)
       - path: ../build/Diagnostics.swift   # Debug only (excluded in Release, see configs)
       - path: Config/PrivacyInfo.xcprivacy
         buildPhase: resources

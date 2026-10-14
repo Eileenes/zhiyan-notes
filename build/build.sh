@@ -38,7 +38,7 @@ DIST="$ROOT/dist"
 ICON_ICNS="$ROOT/icon/MemoryNotes.icns"
 ICON_PNG="$ROOT/icon/icon-1024.png"
 
-WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js)
+WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js theme-init.js privacy.js)
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$*"; }
@@ -71,7 +71,7 @@ preflight() {
 # ---------------------------------------------------------------------------
 write_app_index() {
   local dest="$1"
-  python3 - "$ROOT/prototype/index.html" "$dest" <<'PY'
+  python3 - "$ROOT/prototype/index.html" "$dest" "$ROOT/build/apple-csp.txt" <<'PY'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
@@ -84,6 +84,17 @@ else:
         sys.stderr.write('ERROR: index.html 里找不到 platform.css 锚点\n')
         sys.exit(1)
     s = s.replace(anchor, anchor + tag)
+# preview.css 只给浏览器原型用（控制条 / 窗口外框 / 手机机身），App 不加载
+s = s.replace('<link rel="stylesheet" href="preview.css">\n', '')
+# Apple shells load index.html from file://, so there is no response header to
+# carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
+# (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
+# Single source of truth: build/apple-csp.txt (also used by apple/scripts/stage-web.sh).
+CSP = open(sys.argv[3], encoding='utf-8').read().strip()
+meta = '<meta http-equiv="Content-Security-Policy" content="%s">\n' % CSP
+if 'Content-Security-Policy' not in s:
+    head = s.index('<head>') + len('<head>\n')
+    s = s[:head] + meta + s[head:]
 open(dst, 'w', encoding='utf-8').write(s)
 PY
   [ $? -eq 0 ] || die "生成 App 版 index.html 失败"
@@ -113,7 +124,7 @@ compile() {
     diag=(-D DEBUG "$ROOT/build/Diagnostics.swift")
     say "包含 Diagnostics.swift（ZY_DIAGNOSTICS=1，仅用于验证，勿分发）"
   fi
-  swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" ${diag[@]+"${diag[@]}"} "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
+  swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/WebPolicy.swift" ${diag[@]+"${diag[@]}"} "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   [ -f "$out" ] || die "编译没有产出二进制：$out"
   ok "$(basename "$out") $(wc -c < "$out" | tr -d ' ') bytes"
 }
@@ -122,12 +133,21 @@ compile() {
 # Web 资源：拷完校验，不一致就炸
 # ---------------------------------------------------------------------------
 copy_web() {
-  local dest="$1"
+  local dest="$1" css_src="prototype"
   mkdir -p "$dest"
+  # CSS 走 build-web（PurgeCSS + 压缩，≤55KB 预算）；没有 node 依赖时退回源文件
+  if command -v node >/dev/null && [ -d node_modules/purgecss ]; then
+    node tools/build-web.js >/dev/null || die "build-web 失败（CSS 预算或压缩出错）"
+    css_src="web-dist"
+  else
+    say "未安装 node 依赖（npm ci），App 内 CSS 使用未压缩源文件"
+  fi
   for f in "${WEB_FILES[@]}"; do
-    cp "prototype/$f" "$dest/$f"
+    local src="prototype/$f"
+    [[ "$f" == *.css ]] && src="$css_src/$f"
+    cp "$src" "$dest/$f"
     local a b
-    a=$(shasum -a 256 "prototype/$f" | cut -d' ' -f1)
+    a=$(shasum -a 256 "$src" | cut -d' ' -f1)
     b=$(shasum -a 256 "$dest/$f"   | cut -d' ' -f1)
     [ "$a" = "$b" ] || die "Web 资源拷坏了：$f（$a != $b）"
   done
@@ -244,6 +264,10 @@ run_tests() {
   cp "$ROOT/build/shell.swift" "$TMP/main.swift"
   swiftc -O "$ROOT/build/Data.swift" "$ROOT/build/tests/TestData.swift" -o "$TMP/testdata" || die "测试编译失败"
   "$TMP/testdata"
+  say "跑 WebPolicy 测试（CSP 解析 + 导航策略）"
+  mkdir -p "$TMP/twp" && cp "$ROOT/build/tests/TestWebPolicy.swift" "$TMP/twp/main.swift"
+  swiftc -O "$ROOT/build/WebPolicy.swift" "$TMP/twp/main.swift" -o "$TMP/testwebpolicy" || die "WebPolicy 测试编译失败"
+  "$TMP/testwebpolicy"
 }
 
 # ---------------------------------------------------------------------------

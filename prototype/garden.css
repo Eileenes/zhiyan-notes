@@ -1175,9 +1175,6 @@ button.setting-row:hover {
   .detail-pane {
     position: static;
   }
-  .proto-bar .proto-hint {
-    display: none;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,

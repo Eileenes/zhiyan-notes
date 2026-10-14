@@ -410,3 +410,27 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+.consent-panel {
+  max-width: 460px;
+  text-align: left;
+}
+.consent-panel p {
+  margin: 0 0 10px;
+}
+.privacy-text h2 {
+  font-size: 15px;
+  margin: 18px 0 6px;
+}
+.privacy-text p {
+  line-height: 1.7;
+  margin: 0;
+}
+.danger-zone {
+  margin-top: 18px;
+  border-color: var(--danger-line-2);
+}
+.btn-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-line);
+}
