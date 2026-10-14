@@ -44,9 +44,18 @@ jobs:
         run: bash build/build.sh test
       - name: Build macOS app (ad-hoc signed, hardened runtime)
         run: bash build/build.sh mac
-      - name: Install xcodegen (when the Xcode project exists, PR #6)
+      - name: Install xcodegen 2.46.0 (pinned + checksum; when apple/project.yml exists, PR #6)
         if: hashFiles('apple/project.yml') != ''
-        run: brew install xcodegen
+        env:
+          XCODEGEN_VERSION: "2.46.0"
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" --version
       - name: Build iOS Simulator app
         run: bash build/build.sh ios
       - name: Verify bundles
