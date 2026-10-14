@@ -1,0 +1,72 @@
+name: macOS / iOS (Apple shells)
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      simulator:
+        description: 'Also install and verify the iOS Simulator app (slow)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apple:
+    # Deployment targets are macOS/iOS 26.0, so an Xcode 26 runner is required.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+          swiftc --version
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: 'aarch64-apple-ios-sim'}
+      - uses: Swatinem/rust-cache@v2
+        with: {workspaces: core}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14'}
+      - run: npm ci
+      - name: Web UI tests (real Chrome on the runner)
+        run: |
+          npm run test:runtime
+          node prototype/garden-test.js
+      - name: Rust core tests
+        run: cargo test --manifest-path core/Cargo.toml --locked
+      - name: Swift data-layer tests
+        run: bash build/build.sh test
+      - name: Build macOS app (ad-hoc signed, hardened runtime)
+        run: bash build/build.sh mac
+      - name: Build iOS Simulator app
+        run: bash build/build.sh ios
+      - name: Verify bundles
+        run: |
+          codesign --verify --strict "dist/只言.app"
+          codesign --verify --strict dist/ZhiYan-sim.app
+          vtool -show-build-version dist/ZhiYan-sim.app/ZhiYan-sim | grep -q IOSSIMULATOR
+          test -f "dist/只言.app/Contents/Resources/Web/index.html"
+          test -f dist/ZhiYan-sim.app/Web/index.html
+      - name: iOS Simulator verification
+        if: github.event_name == 'workflow_dispatch' && inputs.simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          python3 build/tests/verify-simulator.py "$UDID"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zhiyan-apple-unsigned
+          path: |
+            dist/只言.app
+            dist/ZhiYan-sim.app
+            verify/
+          if-no-files-found: ignore

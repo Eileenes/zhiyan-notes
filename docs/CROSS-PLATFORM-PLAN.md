@@ -55,7 +55,7 @@ Windows：安装 Rust MSVC 工具链、Visual Studio C++ Build Tools、Node 22 �
 
 Android：自行安装 / 接受 SDK 许可并配置 Java 17、SDK 36、NDK 28.0.13004108，设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME`。运行 `npm ci`、`npm run android:init`、`npm run build:android -- --target aarch64`。`android:init` 会配置麦克风权限并关闭系统备份；生成项目不提交，需通过脚本重新生成。正式发布还需 Android 签名密钥；此仓库不包含发行密钥。
 
-GitHub Actions：`.github/workflows/cross-platform.yml` 可手动运行，或在 main 分支收到代码时运行。Windows 任务输出 bundle；Android 任务默认不运行，需在手动运行时明确勾选 `build_android`，再在运行器安装 SDK/NDK 并构建 APK。运行条件和产物签名状态以实际 CI 结果为准。
+GitHub Actions：`.github/workflows/macos.yml` 在 PR 与 main 上于 `macos-26`（Xcode 26）运行 Web UI 测试（含 garden-test）、Rust 与 Swift 数据层测试，并用 `build/build.sh` 构建 Mac 包与 iOS 模拟器包（未签名，作为产物上传）；手动运行可勾选模拟器安装验证。`.github/workflows/cross-platform.yml` 可手动运行，或在 main 分支收到代码时运行。Windows 任务输出 bundle；Android 任务默认不运行，需在手动运行时明确勾选 `build_android`，再在运行器安装 SDK/NDK 并构建 APK。运行条件和产物签名状态以实际 CI 结果为准。
 
 ## 本地测试
 
