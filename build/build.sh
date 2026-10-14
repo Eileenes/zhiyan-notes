@@ -35,7 +35,7 @@ DIST="$ROOT/dist"
 ICON_ICNS="$ROOT/icon/MemoryNotes.icns"
 ICON_PNG="$ROOT/icon/icon-1024.png"
 
-WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js)
+WEB_FILES=(tokens.css base.css platform.css app-embed.css data.js db.js icons.js garden.js views.js app.js garden.css services.js service-views.js service.css runtime.js gateway.js theme-init.js)
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$*"; }
@@ -68,7 +68,7 @@ preflight() {
 # ---------------------------------------------------------------------------
 write_app_index() {
   local dest="$1"
-  python3 - "$ROOT/prototype/index.html" "$dest" <<'PY'
+  python3 - "$ROOT/prototype/index.html" "$dest" "$ROOT/build/apple-csp.txt" <<'PY'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
@@ -81,6 +81,15 @@ else:
         sys.stderr.write('ERROR: index.html 里找不到 platform.css 锚点\n')
         sys.exit(1)
     s = s.replace(anchor, anchor + tag)
+# Apple shells load index.html from file://, so there is no response header to
+# carry a CSP: put it in a <meta>. The native bridge is a WKScriptMessageHandler
+# (not fetch), so connect-src stays closed. frame-ancestors is ignored in <meta>.
+# Single source of truth: build/apple-csp.txt (also used by apple/scripts/stage-web.sh).
+CSP = open(sys.argv[3], encoding='utf-8').read().strip()
+meta = '<meta http-equiv="Content-Security-Policy" content="%s">\n' % CSP
+if 'Content-Security-Policy' not in s:
+    head = s.index('<head>') + len('<head>\n')
+    s = s[:head] + meta + s[head:]
 open(dst, 'w', encoding='utf-8').write(s)
 PY
   [ $? -eq 0 ] || die "生成 App 版 index.html 失败"
@@ -109,11 +118,11 @@ compile() {
     xcrun -sdk iphonesimulator swiftc \
       -target arm64-apple-ios26.0-simulator \
       -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker "$ROOT/build/simulator.entitlements" \
-      -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/aarch64-apple-ios-sim/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
+      -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/WebPolicy.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/aarch64-apple-ios-sim/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   else
     say "编译 macOS 目标"
     cargo build --manifest-path "$ROOT/core/Cargo.toml" --release --lib
-    swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
+    swiftc -O "$TMP/Data.swift" "$ROOT/build/Audio.swift" "$ROOT/build/Services.swift" "$ROOT/build/NativeBridge.swift" "$ROOT/build/WebPolicy.swift" "$ROOT/build/Diagnostics.swift" "$TMP/main.swift" "$ROOT/core/target/release/libzhiyan_core.a" -framework Security -framework SystemConfiguration -lc++ -o "$out"
   fi
   [ -f "$out" ] || die "编译没有产出二进制：$out"
   ok "$(basename "$out") $(wc -c < "$out" | tr -d ' ') bytes"
@@ -277,6 +286,10 @@ run_tests() {
   cp "$ROOT/build/shell.swift" "$TMP/main.swift"
   swiftc -O "$ROOT/build/Data.swift" "$ROOT/build/tests/TestData.swift" -o "$TMP/testdata" || die "测试编译失败"
   "$TMP/testdata"
+  say "跑 WebPolicy 测试（CSP 解析 + 导航策略）"
+  mkdir -p "$TMP/twp" && cp "$ROOT/build/tests/TestWebPolicy.swift" "$TMP/twp/main.swift"
+  swiftc -O "$ROOT/build/WebPolicy.swift" "$TMP/twp/main.swift" -o "$TMP/testwebpolicy" || die "WebPolicy 测试编译失败"
+  "$TMP/testwebpolicy"
 }
 
 # ---------------------------------------------------------------------------

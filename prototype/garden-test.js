@@ -7,7 +7,8 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), "zhiyan-ui-"));
 const output = path.resolve(__dirname, "../verify/garden");
 fs.mkdirSync(output, { recursive: true });
 const chrome = spawn(
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  process.env.CHROME_PATH ||
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   [
     "--headless=new",
     "--disable-gpu",
@@ -166,6 +167,26 @@ let errors = [];
   await click('[data-act="undo"]');
   await wait("ZY.list.some(n=>n.id===window.editedID)");
   await check("undo restores note", "ZY.list.some(n=>n.id===window.editedID)");
+  // XSS: user/model content must never become live markup.
+  const payload = '<img src=x onerror="window.__xss=(window.__xss||0)+1"><script>window.__xss=99</script>';
+  await evaluate(`window.__xss=0;window.alert=()=>{window.__xss+=100}`);
+  await click('[data-p="capture"]');
+  await input("#cap-input", payload);
+  await click('[data-act="save-text"]');
+  await wait("!state.busy && !state.draft");
+  await evaluate(
+    `(async()=>{const n=ZY.list.find(n=>n.raw.includes("onerror"));n.summary=${JSON.stringify(payload)};n.tags=[${JSON.stringify(payload)}];n.transcript=${JSON.stringify(payload)};n.ai_tags=[${JSON.stringify(payload)}];})()`,
+  );
+  await click('[data-p="timeline"]');
+  await click(".memory-card");
+  await evaluate(`toast(${JSON.stringify(payload)},"error")`);
+  await sleep(300);
+  await check(
+    "note containing <img onerror> does not execute",
+    `window.__xss===0 && !document.querySelector("#root img, #root script, #zy-toast img") && document.querySelector(".detail-raw").textContent.includes("onerror") && document.getElementById("zy-toast").textContent.includes("onerror")`,
+  );
+  await evaluate(`(async()=>{const n=ZY.list.find(n=>n.raw.includes("onerror"));await ZY.remove?.(n.id);})()`).catch(() => {});
+  await evaluate(`state.note=null;navigate("capture")`);
   await click('[data-p="search"]');
   await input("#q", "上海");
   await wait("!state.searching && state.hits.length===1");

@@ -438,6 +438,9 @@ document.addEventListener(
   true,
 );
 window.addEventListener("resize", () => ProviderProtocol.close());
+// Service forms are driven by buttons; never let Enter submit/navigate.
+// (Replaces inline onsubmit handlers, which the CSP forbids.)
+document.addEventListener("submit", (e) => e.preventDefault());
 document.addEventListener("input", (e) => {
   const target = e.target;
   if (target.dataset.providerField && Services.providerDraft)
