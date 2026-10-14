@@ -4,6 +4,7 @@
 #   proto: prototype/index.html (source CSS, preview frame)       base vs HEAD
 #   app:   the bundle the shells ship (index + app-embed, no frame)
 #          base: raw prototype CSS  vs  HEAD: web-dist (PurgeCSS + minified)
+#   plus tools/vr-scenes.js states (light + dark) for both variants.
 # Usage: tools/visual-regression.sh [BASE_REF] [OUT_DIR]
 # Needs Node 22 (or 20 with --experimental-websocket), Chrome (CHROME_PATH),
 # npm ci, python3 + Pillow. Writes OUT_DIR/{before,after,diff}/<variant>/*.png
@@ -35,6 +36,11 @@ rm -rf "$OUT/before" "$OUT/after" "$OUT/diff"
 run() { # variant side index
   GARDEN_INDEX="$3" GARDEN_OUT="$OUT/$2/$1" node "${NODE_FLAGS[@]}" "$ROOT/prototype/garden-test.js" > "$OUT/$2-$1.json" \
     || echo "WARN: checks failed for $2/$1 (screenshots still compared)" >&2
+  # Targeted states in light + dark (tools/vr-scenes.js): detail/edit/AI,
+  # recording, toasts, consent, delete-account, conflict, API running, search,
+  # sb-collapsed, iOS pages.
+  VR_INDEX="$3" VR_OUT="$OUT/$2/$1" node "${NODE_FLAGS[@]}" "$ROOT/tools/vr-scenes.js" > "$OUT/$2-$1-scenes.json" \
+    || echo "WARN: some scenes failed for $2/$1, see $OUT/$2-$1-scenes.json" >&2
 }
 run proto before "$TMP/base/prototype/index.html"
 run proto after  "$ROOT/prototype/index.html"
