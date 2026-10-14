@@ -10,7 +10,7 @@
 |---|---|
 | 数据库 | `~/Library/Application Support/只言/notes.db`（+ `-wal`、`-shm`） |
 | 录音等附件 | `~/Library/Application Support/只言/media/` |
-| 偏好（草稿、主题、隐私同意等） | 数据库 `app_meta.preferences`（随数据库迁移） |
+| 界面偏好（草稿、主题、侧栏、录音草稿、引导、隐私同意 `aiConsent`） | `~/Library/Application Support/只言/preferences.json`（与 `notes.db` 同目录，由 `build/NativeBridge.swift` 直接读写；随目录一起迁移）。PR #4 起 `aiConsent` 另外镜像写入数据库 `app_meta.preferences`，启动时从 preferences.json 重新同步 |
 | API Key、同步令牌、对外接口密钥 | 登录钥匙串，service 前缀 `com.duketao.zhiyan.credentials.` |
 
 开启 App Sandbox 后，`FileManager.urls(for: .applicationSupportDirectory)` 返回容器内路径
@@ -41,9 +41,9 @@ macOS 在沙盒 App **第一次启动、容器尚未创建时**，会按 App 包
 在 `Data.swift` 打开数据库前：
 
 1. 若容器内 `只言/notes.db` 不存在或为空库，且 `UserDefaults` 未标记 `legacyMigrationDone`：
-2. 弹出说明：“检测到可能存在旧版数据，请选择旧数据文件夹以导入”，用 `NSOpenPanel` 预置到 `~/Library/Application Support/只言`（需要 entitlement `com.apple.security.files.user-selected.read-only`，用户选择即授权，不申请任意读权限）。
+2. 弹出说明：“检测到可能存在旧版数据，请选择旧数据文件夹以导入”，用 `NSOpenPanel` 预置到 `~/Library/Application Support/只言`（entitlement `com.apple.security.files.user-selected.read-only` 已在 `apple/Config/ZhiYan-macOS.entitlements` 声明，用户选择即授权，不申请任意读权限）。
 3. 校验所选目录：`notes.db` 可用 `PRAGMA integrity_check` 打开；`PRAGMA user_version` 不高于当前版本。
-4. **复制**（不移动）`notes.db`、`-wal`、`-shm`（先在源库上 `wal_checkpoint(TRUNCATE)` 不可行，因为只读——改为用 SQLite backup API 从源库备份到容器内新文件，保证一致性）与 `media/`。
+4. **复制**（不移动）`preferences.json`、`notes.db`、`-wal`、`-shm`（先在源库上 `wal_checkpoint(TRUNCATE)` 不可行，因为只读——改为用 SQLite backup API 从源库备份到容器内新文件，保证一致性）与 `media/`。
 5. 成功后写 `legacyMigrationDone=true`，提示用户旧目录可手动删除（App 不自动删除）。
 6. 用户取消：写 `legacyMigrationDone=declined`，设置页提供“从旧版导入…”入口可再次触发。
 

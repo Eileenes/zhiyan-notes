@@ -10,9 +10,9 @@
 | `Sources/main.swift` | 指向 `build/shell.swift` 的符号链接（含顶层代码，必须叫 main.swift） |
 | `scripts/build-xcframework.sh` | 把 `core/` 编成 `apple/build/ZhiYanCore.xcframework`（macOS arm64+x86_64、iOS arm64、iOS 模拟器 arm64+x86_64） |
 | `scripts/stage-web.sh` | 构建阶段脚本：运行 `tools/build-web.js`，把 `web-dist/` 拷进包内 `Web/` |
-| `Config/ZhiYan-macOS.entitlements` | App Sandbox + 网络客户端 + 本机服务端（对外接口 127.0.0.1）+ 麦克风 + 钥匙串 |
+| `Config/ZhiYan-macOS.entitlements` | App Sandbox + 网络客户端 + 本机服务端（对外接口 127.0.0.1）+ 麦克风 + 用户所选文件只读（旧数据导入）+ 钥匙串 |
 | `Config/ZhiYan-iOS.entitlements` | 钥匙串访问组（模拟器与真机共用） |
-| `Config/PrivacyInfo.xcprivacy` | 隐私清单：不追踪、无收集数据类型、Required-Reason API（文件时间戳 C617.1、系统启动时间 35F9.1） |
+| `Config/PrivacyInfo.xcprivacy` | 隐私清单：不追踪、无收集数据类型、Required-Reason API（文件时间戳 C617.1、系统启动时间 35F9.1、UserDefaults CA92.1） |
 | `Config/Info-*.plist` | 与 build.sh 内联的 plist 一致，改为使用构建变量；加 `ITSAppUsesNonExemptEncryption=false` |
 | `Assets.xcassets` | iOS AppIcon（单张 1024，符号链接到 `icon/icon-1024.png`） |
 | `../core/include/` | Rust C ABI 头文件与 modulemap（随 XCFramework 分发） |

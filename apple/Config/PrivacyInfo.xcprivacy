@@ -29,6 +29,11 @@
 			<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategorySystemBootTime</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key><array><string>35F9.1</string></array>
 		</dict>
+		<dict>
+			<!-- CA92.1: app-only UserDefaults (legacy-migration flag, WebKit/AppKit state). -->
+			<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key><array><string>CA92.1</string></array>
+		</dict>
 	</array>
 </dict>
 </plist>
